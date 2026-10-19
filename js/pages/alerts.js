@@ -1,160 +1,198 @@
 /**
  * pages/alerts.js — التنبيهات — Phase 6
- * إنشاء: معدن (من الظاهرة) + عملة (من الظاهرة) + سعر مستهدف لكل جرام + فوق/تحت.
- * إدارة: تشغيل/إيقاف/حذف + فرز حسب الأقرب للتفعيل + سجل تفعيل.
+ * إنشاء تنبيه (معدن ظاهر × عملة ظاهرة × سعر لكل جرام × فوق/تحت)
+ * + قائمة مفرزة حسب الأقرب للتفعيل + تشغيل/إيقاف/حذف + شريط تقدّم قرب الهدف.
  */
 
 import { get, subscribe } from '../store.js';
-import { formatMoney } from '../format.js';
-import { karatUsdPerGram, convert, sensibleDecimals } from '../money.js';
-import { t } from '../i18n.js';
+import { ASSETS, CURRENCY_MAP, ASSET_MAP, flagEmoji, pricePerGramUSD } from '../pools.js';
 import * as engine from '../alertsEngine.js';
-import * as ui from '../ui.js';
-import { assetName, assetIcon, curName, curFlag, curSymbol, lang } from '../names.js';
+import { formatMoney, iso } from '../format.js';
+import { t } from '../i18n.js';
+import { el, toast } from '../ui.js';
+
+let root = null;
+let form = {};
 
 export function renderAlerts(container) {
-  const el = document.createElement('section');
-  el.className = 'page';
-  el.innerHTML = `
-    <h1 class="page-title">${t('alerts.title')}</h1>
-    <form class="card" data-slot="form"></form>
-    <h2 class="section-title">${t('alerts.list')}</h2>
-    <span class="text-dim" style="font-size:12px">${t('alerts.sortedBy')}</span>
-    <div class="link-list" data-slot="list"></div>
-    <div class="card" data-slot="historyCard">
-      <h2 class="section-title">${t('alerts.history')}</h2>
-      <div data-slot="history"></div>
-    </div>`;
+  root = el('section', { class: 'page alerts' });
 
-  container.append(el);
-  ui.bindRipples(el);
+  // ============ نموذج الإنشاء ============
+  const card = el('div', { class: 'card al-create' });
+  card.append(el('h1', { class: 'page-title', text: t('al.title') }));
 
-  const form = el.querySelector('[data-slot=form]');
-  const listSlot = el.querySelector('[data-slot=list]');
-  const historySlot = el.querySelector('[data-slot=history]');
-
-  let asset = (get('metals') || [])[0] || 'XAU';
-  let currency = get('displayCurrency') || 'EGP';
-  let mode = 'above';
-  let targetV = 100;
-
-  function suggestedTarget() {
-    const ug = karatUsdPerGram('21K');
-    const r = ug != null ? convert(ug, 'USD', currency) : null;
-    return r != null ? Math.round(r * 10) / 10 : 100.0;
+  const assetSel = el('select', { class: 'select rippleable', 'aria-label': t('al.asset') });
+  for (const code of get('metals')) {
+    const a = ASSET_MAP.get(code);
+    assetSel.append(el('option', { value: code, text: `${a.icon} ${get('lang') === 'ar' ? a.ar : a.en}` }));
   }
-
-  /* ---- استمارة الإنشاء ---- */
-  let targetInputBuilt = false;
-
-  function buildForm() {
-    const l = lang();
-    form.replaceChildren();
-    const head = document.createElement('h2');
-    head.className = 'section-title';
-    head.style.marginBlock = '4px';
-    head.textContent = t('alerts.create');
-    form.append(head);
-
-    form.append(
-      ui.selectEl({
-        label: t('alerts.asset'),
-        value: asset,
-        options: (get('metals') || []).map(m => ({ value: m, text: `${assetIcon(m)} ${assetName(m)}` })),
-        onchange: v => { asset = v; },
-      }),
-      ui.selectEl({
-        label: t('alerts.currency'),
-        value: currency,
-        options: (get('currencies') || []).map(c => ({ value: c, text: `${curFlag(c)} ${curName(c)}` })),
-        onchange: v => { currency = v; },
-      }),
-      ui.numberInput({
-        label: t('alerts.target'),
-        value: targetV, min: 0.01, step: targetV >= 100 ? 10 : 1,
-        onInput: v => { targetV = v; },
-      }),
-      ui.segmented({
-        value: mode,
-        options: [{ value: 'above', text: '▲ ' + t('alerts.above') }, { value: 'below', text: '▼ ' + t('alerts.below') }],
-        onChange: v => { mode = v; },
-      }),
-    );
-
-    const submit = document.createElement('button');
-    submit.type = 'submit';
-    submit.className = 'btn btn-primary rippled';
-    submit.textContent = t('alerts.saveBtn');
-    form.append(submit);
-    targetInputBuilt = true;
+  const curSel = el('select', { class: 'select rippleable', 'aria-label': t('al.currency') });
+  for (const code of get('currencies')) {
+    const c = CURRENCY_MAP.get(code);
+    curSel.append(el('option', { value: code, text: `${flagEmoji(code)} ${code} — ${c.ar}` }));
   }
-
-  form.addEventListener('submit', e => {
-    e.preventDefault();
-    if (!(targetV > 0)) {
-      targetV = suggestedTarget();
-      return ui.toast(t('alerts.target') + ' > 0', { icon: '⚠️' });
-    }
-    engine.add({ asset, currency, target: targetV, mode });
-    ui.toast(t('alerts.created'), { icon: '✅' });
-    paintList();
-    paintHistory();
+  const target = el('input', {
+    class: 'input num', type: 'number', inputmode: 'decimal', min: '0', step: 'any',
+    placeholder: '0.00', 'aria-label': t('al.target'),
   });
 
-  /* ---- القائمة ---- */
+  const dirSeg = el('div', { class: 'segmented', role: 'group', 'aria-label': 'direction' });
+  for (const [d, key] of [['above', 'al.above'], ['below', 'al.below']]) {
+    dirSeg.append(el('button', {
+      type: 'button', class: `seg-btn rippleable${d === 'above' ? ' active' : ''}`, dataset: { dir: d },
+      onclick: (e) => { selectedDir = d; dirSeg.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('active', b === e.currentTarget)); },
+    }, el('span', { text: t(key) })));
+  }
+  let selectedDir = 'above';
+
+  const gramNow = el('span', { class: 'num gold', id: 'gramNowPill' }, '—');
+  const syncGramNow = () => {
+    const v = engine.gramPrice(assetSel.value, curSel.value);
+    gramNow.textContent = Number.isFinite(v) ? iso(formatMoney(v)) + ' ' + (CURRENCY_MAP.get(curSel.value)?.symbol || '') : '—';
+  };
+  assetSel.addEventListener('change', syncGramNow);
+  curSel.addEventListener('change', syncGramNow);
+  [assetSel, curSel].forEach(s => s.classList.add('rippleable'));
+
+  const addBtn = el('button', {
+    type: 'button', class: 'btn btn-gold rippleable',
+    text: t('al.add'),
+    onclick: () => {
+      const val = parseFloat(target.value);
+      if (!Number.isFinite(val) || val <= 0) { toast(t('al.invalidTarget'), { kind: 'warn', icon: '⚠️' }); return; }
+      engine.addAlert({ asset: assetSel.value, currency: curSel.value, target: val, direction: selectedDir });
+      target.value = '';
+      toast(t('ui.saved') + ' ✓', { kind: 'success', ms: 2200 });
+      paintList();
+    },
+  });
+
+  card.append(
+    el('h2', { class: 'sec-title', text: t('al.create') }),
+    el('div', { class: 'two-col' }, field(t('al.asset'), assetSel), field(t('al.currency'), curSel)),
+    el('div', { class: 'two-col' },
+      field(t('al.target'), el('div', {}, target, el('p', { class: 'hint' }, t('al.now') + ': ', gramNow))),
+      field('↓', dirSeg),
+    ),
+    addBtn,
+  );
+
+  // ============ القائمة ============
+  const listCard = el('div', { class: 'card al-list-card' });
+  listCard.append(el('h2', { class: 'sec-title', text: t('al.list') }));
+  const list = el('div', { class: 'al-rows' });
+  listCard.append(list);
+  const listHint = el('p', { class: 'hint', text: t('al.closeToFire') });
+  listCard.append(listHint);
+
+  root.append(card, listCard);
+  container.append(root);
+
+  syncGramNow();
+
   function paintList() {
-    const items = engine.sorted();
-    if (!items.length) {
-      listSlot.innerHTML = `<div class="empty-state"><span class="es-icon">🔔</span>${t('alerts.empty')}</div>`;
+    const alerts = engine.sortedNearest();
+    list.replaceChildren();
+    if (!alerts.length) {
+      list.append(el('div', { class: 'empty-state' },
+        el('span', { class: 'es-icon', text: '🔔', 'aria-hidden': 'true' }),
+        el('p', { text: t('al.none') }),
+        el('p', { class: 'hint', text: t('al.noneHint') }),
+      ));
       return;
     }
-    listSlot.replaceChildren(...items.map(a => {
-      const now = engine.currentGramPrice(a.asset, a.currency);
-      const gapRatio = now != null ? Math.abs(now - a.target) / Math.max(1e-9, Math.abs(a.target)) : 1;
-      const progress = a.triggeredAt ? 100 : Math.round(Math.max(0, Math.min(1, 1 - gapRatio * 3)) * 100);
-
-      const row = document.createElement('div');
-      row.className = 'alert-row' + (a.triggeredAt ? ' is-fired' : a.active ? '' : ' is-paused');
-      row.innerHTML = `
-        <span class="metal-icon" style="--mc:var(--gold);width:38px;height:38px;font-size:17px" aria-hidden="true">${assetIcon(a.asset)}</span>
-        <div class="alert-main">
-          <div class="alert-line1">
-            ${assetName(a.asset)} · ${curFlag(a.currency)} ${a.currency}
-            <span class="alert-target num" dir="ltr">${a.mode === 'above' ? '▲' : '▼'} ${formatMoney(a.target, { decimals: sensibleDecimals(a.target) })} ${curSymbol(a.currency)}</span>
-          </div>
-          <div class="alert-now num" dir="ltr">${t('alerts.current')}: ${now == null ? '—' : formatMoney(now, { decimals: sensibleDecimals(now) })} ${curSymbol(a.currency)}</div>
-          <div class="alert-progress"><i style="width:${progress}%"></i></div>
-          ${a.triggeredAt ? `<span class="text-dim num" style="font-size:11px" dir="ltr">${t('alerts.fired')} · ${new Date(a.triggeredAt).toLocaleString(lang() === 'ar' ? 'ar-EG' : 'en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>` : ''}
-        </div>
-        <div class="alert-actions">
-          <button class="icon-btn" type="button" data-act="toggle" aria-label="${a.active ? t('alerts.disable') : t('alerts.enable')}" title="${a.active ? t('alerts.disable') : t('alerts.enable')}">${a.active ? '⏸' : '▶'}</button>
-          <button class="icon-btn danger" type="button" data-act="del" aria-label="${t('alerts.delete')}" title="${t('alerts.delete')}">🗑</button>
-        </div>`;
-      row.querySelector('[data-act=toggle]').addEventListener('click', () => { engine.toggle(a.id); paintList(); });
-      row.querySelector('[data-act=del]').addEventListener('click', () => { engine.remove(a.id); paintList(); paintHistory(); });
-      return row;
-    }));
+    for (const a of alerts) paintRow(list, a);
   }
-
-  function paintHistory() {
-    const fired = engine.all().filter(a => a.triggeredAt).sort((x, y) => y.triggeredAt - x.triggeredAt);
-    if (!fired.length) { historySlot.innerHTML = `<p class="empty-note">${t('alerts.noHistory')}</p>`; return; }
-    historySlot.innerHTML = fired.map(a => `
-      <div class="alert-row is-fired" style="margin-block:8px">
-        <div class="alert-main">
-          <div class="alert-line1">${assetIcon(a.asset)} ${assetName(a.asset)} <span class="alert-target num" dir="ltr">${formatMoney(a.target)} ${curSymbol(a.currency)}</span></div>
-          <span class="text-dim num" style="font-size:11px" dir="ltr">${t('alerts.triggeredAt', { t: new Date(a.triggeredAt).toLocaleString(lang() === 'ar' ? 'ar-EG' : 'en-GB', { dateStyle: 'short', timeStyle: 'short' }) })}</span>
-        </div>
-      </div>`).join('');
-  }
-
-  buildForm();
   paintList();
-  paintHistory();
 
-  const unsub = subscribe(changed => {
-    if (changed.some(c => ['prices', 'usdRates', 'metals', 'currencies', 'displayCurrency'].includes(c))) buildForm();
-    if (changed.some(c => ['prices', 'usdRates'].includes(c))) paintList();
+  const unsub = subscribe((changed) => {
+    if (changed.some(k => ['prices', 'usdRates', 'currencies', 'metals'].includes(k))) {
+      syncGramNow();
+      paintList();
+    }
+    if (changed.includes('currencies')) fillSel(curSel, get('currencies'), t('al.currency'));
+    if (changed.includes('metals')) fillSel(assetSel, get('metals'), t('al.asset'));
   });
-  return () => unsub();
+
+  return () => { unsub(); root = null; };
+}
+
+/** صف تنبيه واحد */
+function paintRow(list, a) {
+  const asset = ASSET_MAP.get(a.asset) || { icon: '❓', ar: a.asset, en: a.asset };
+  const cur = CURRENCY_MAP.get(a.currency) || { symbol: a.currency };
+  const lang = get('lang');
+  const name = `${asset.icon} ${lang === 'ar' ? asset.ar : asset.en}`;
+  const sym = cur.symbol || a.currency;
+
+  const cur_ = engine.gramPrice(a.asset, a.currency);
+  const dist = engine.distanceToFire(a);
+  const progress = Number.isFinite(dist) ? Math.max(0, Math.min(1, 1 - dist)) : 0;
+
+  const row = el('div', { class: `al-row card${a.fired ? ' fired' : ''}${!a.enabled ? ' paused' : ''}` });
+  const targetTxt = `${iso(formatMoney(a.target))} ${sym}`;
+  const nowTxt = Number.isFinite(cur_) ? `${iso(formatMoney(cur_))} ${sym}` : '—';
+
+  row.innerHTML = `
+    <div class="al-main">
+      <div class="al-title">
+        <span class="al-name">${name}</span>
+        <span class="al-dir num">${a.direction === 'above' ? '▲' : '▼'} ${targetTxt}</span>
+        ${a.fired ? `<span class="al-fired-badge" data-i18n="al.fired">${t('al.fired')}</span>` : ''}
+      </div>
+      <div class="al-nums num" dir="ltr">
+        <span>${t('al.now')}: ${nowTxt}</span>
+        <span aria-hidden="true">·</span>
+        <span>${t('al.target')}: ${targetTxt}</span>
+      </div>
+      <div class="progress" role="img" aria-label="${progress ? Math.round(progress * 100) : 0}%">
+        <div class="progress-fill" style="width:${Math.round(progress * 100)}%"></div>
+      </div>
+      ${a.fired ? `<p class="hint">${t('al.rearm')}</p>` : ''}
+    </div>
+    <div class="al-actions">
+      <label class="switch sm" role="switch">
+        <input type="checkbox" ${a.enabled ? 'checked' : ''} aria-label="${name}">
+        <span class="slider" aria-hidden="true"></span>
+      </label>
+      <button type="button" class="btn btn-icon btn-danger-ghost rippleable" aria-label="${t('al.delete')} ${name}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+      </button>
+    </div>`;
+
+  row.querySelector('input[type=checkbox]').addEventListener('change', (e) => {
+    engine.setEnabled(a.id, e.target.checked);
+    paintListAgain();
+  });
+  row.querySelector('.btn-danger-ghost').addEventListener('click', () => {
+    engine.removeAlert(a.id);
+    toast(t('al.delete') + ' ✓', { kind: 'success', ms: 1600 });
+    paintListAgain();
+  });
+
+  function paintListAgain() {
+    // إعادة رسم القائمة دقيقة — عبر فحص وجود root (قد يغادر المستخدم الصفحة)
+    if (!document.contains(row)) return;
+    const rows = row.parentElement;
+    if (rows) {
+      const alerts = engine.sortedNearest();
+      rows.replaceChildren();
+      if (!alerts.length) return;
+      alerts.forEach(x => paintRow(rows, x));
+    }
+  }
+
+  list.append(row);
+}
+
+function fillSel(sel, codes, ariaKey) {
+  if (!document.contains(sel)) return;
+  sel.replaceChildren();
+  for (const code of codes) {
+    const c = CURRENCY_MAP.get(code) || ASSET_MAP.get(code);
+    sel.append(el('option', { value: code, text: c?.ar || c?.en || code }));
+  }
+}
+function field(labelText, control) {
+  return el('label', { class: 'field' }, el('span', { class: 'label', text: labelText }), control);
 }

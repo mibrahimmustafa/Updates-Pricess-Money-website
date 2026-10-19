@@ -1,21 +1,26 @@
 {
   "name": "Pricess Money — أسعار المعادن والعملات الحية",
   "short_name": "Pricess Money",
-  "description": "منصة أسعار لحظية للمعادن النفيسة والأصول الرقمية وأسعار صرف العملات مع حاسبة مجوهرات وتنبيهات أسعار.",
+  "description": "أسعار لحظية للذهب والفضة والعملات العالمية والخليجية مع حاسبة مجوهرات وتنبيهات أسعار — مجاناً.",
   "lang": "ar",
   "dir": "rtl",
-  "start_url": "/index.html#/home",
-  "scope": "/",
+  "id": "/",
+  "start_url": "./index.html#/home",
+  "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "background_color": "#12100C",
   "theme_color": "#12100C",
-  "categories": ["finance", "utilities"],
+  "categories": ["finance", "utilities", "shopping"],
   "icons": [
-    { "src": "assets/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ],
-  "screenshots": []
+  "shortcuts": [
+    { "name": "حاسبة المجوهرات", "short_name": "المجوهرات", "url": "./index.html#/jewelry" },
+    { "name": "المحوّل", "short_name": "المحوّل", "url": "./index.html#/converter" },
+    { "name": "التنبيهات", "short_name": "التنبيهات", "url": "./index.html#/alerts" }
+  ]
 }

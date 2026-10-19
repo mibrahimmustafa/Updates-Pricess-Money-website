@@ -1,104 +1,122 @@
 /**
- * alertsEngine.js — تقييم تلقائي مع كل تحديث سعر — Phase 6
- * تخزين: alerts_v3 (مستقل عن prefs). Toast عند التفعيل + سجل محلي.
- * قابل للتوسع لاحقاً بإشعارات Web Push عبر Service Worker.
+ * alertsEngine.js — تقييم التنبيهات مع كل تحديث سعر — Phase 6
+ * تخزين: alerts_v3. منطق: تفعيل مرة واحدة + إعادة تسليح عند انقلاب الشرط (hysteresis).
  */
 
-import { get, set, subscribe } from './store.js';
-import { ASSET_MAP } from './pools.js';
-import { usdPerGram, convert } from './money.js';
+import { get, subscribe } from './store.js';
+import { CURRENCY_MAP, ASSET_MAP, pricePerGramUSD } from './pools.js';
+import { convert } from './money.js';
+import { formatMoney, money, iso } from './format.js';
 import { t } from './i18n.js';
-import { iso } from './format.js';
+import { toast, beep } from './ui.js';
 
 const KEY = 'alerts_v3';
 
-/** قراءة/حفظ كل التنبيهات */
-export function all() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+/** كل تنبيه: {id, asset, currency, target, direction:'above'|'below', enabled, fired, firedAt, createdAt} */
+export function listAlerts() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
 }
-export function saveAll(list) {
-  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* ممتلئ */ }
-  set({ alertsCount: list.filter(a => a.active).length });
+function save(list) {
+  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* تجاهل */ }
+}
+function mutate(fn) {
+  const list = listAlerts();
+  const next = fn(list.slice()) || list;
+  save(next);
+  return next;
 }
 
-export function add({ asset, currency, target, mode }) {
-  const list = all();
-  list.unshift({
-    id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    asset, currency,
-    target: Number(target),
-    mode, // 'above' | 'below'
-    active: true,
+export function addAlert({ asset, currency, target, direction }) {
+  const t = Number(target);
+  if (!ASSET_MAP.has(asset) || !CURRENCY_MAP.has(currency)) return null;
+  if (!Number.isFinite(t) || t <= 0) return null;
+  const item = {
+    id: (crypto.randomUUID?.() || 'a' + Date.now() + Math.random().toString(16).slice(2)),
+    asset, currency, target: t,
+    direction: direction === 'below' ? 'below' : 'above',
+    enabled: true, fired: false, firedAt: 0,
     createdAt: Date.now(),
-    triggeredAt: null,
-  });
-  saveAll(list);
-  return list;
+  };
+  mutate(list => { list.push(item); return list; });
+  evaluate(); // تقييم فوري — لو الشرط محقق أصلاً خدش تلتفتش لتحديث جاي
+  return item;
 }
 
-export function toggle(id) {
-  const list = all().map(a => a.id === id
-    ? { ...a, active: !a.active, triggeredAt: a.active ? null : a.triggeredAt }
-    : a);
-  saveAll(list);
-  return list;
+export function removeAlert(id) {
+  mutate(list => list.filter(a => a.id !== id));
+}
+export function setEnabled(id, on) {
+  mutate(list => list.map(a => a.id === id ? { ...a, enabled: !!on, fired: false } : a));
+}
+export function clearFired(id) {
+  mutate(list => list.map(a => a.id === id ? { ...a, fired: false, firedAt: 0 } : a));
 }
 
-export function remove(id) {
-  const list = all().filter(a => a.id !== id);
-  saveAll(list);
-  return list;
+/** سعر الجرم الحالي لمعدن × عملة — قاعدة الحساب الوحيدة */
+export function gramPrice(asset, currency) {
+  const prices = get('prices');
+  const p = prices?.[asset]?.usd;
+  const gUSD = pricePerGramUSD(asset, p);
+  if (!Number.isFinite(gUSD)) return NaN;
+  return convert(gUSD, 'USD', currency);
 }
 
-/** السعر الحالي لجرام المعدن بالعملة — أو null */
-export function currentGramPrice(asset, currency) {
-  const ug = usdPerGram(asset);
-  if (ug == null) return null;
-  return convert(ug, 'USD', currency);
+/** المسافة النسبية إلى التفعيل — أصغر رقم = الأقرب (للفرز) */
+export function distanceToFire(a) {
+  const cur = gramPrice(a.asset, a.currency);
+  if (!Number.isFinite(cur)) return Infinity;
+  return Math.abs(cur - a.target) / a.target;
 }
 
-/** المسافة النسبية للتفعيل — أصغر = أقرب (للفرز) */
-function distanceToTrigger(a) {
-  const now = currentGramPrice(a.asset, a.currency);
-  if (now == null) return Number.POSITIVE_INFINITY;
-  return Math.abs(now - a.target) / Math.max(1e-9, Math.abs(a.target));
-}
-
-/** تقييم كل التنبيهات النشطة مع آخر أسعار — يقيَّم مع كل تحديث في store */
+/** التقييم مع كل تحديث — يُستدعى من polling وبعد أي تغيير تنبيهات */
 export function evaluate() {
-  let list = all();
-  let fired = false;
-  list = list.map(a => {
-    if (!a.active || a.triggeredAt) return a;
-    const now = currentGramPrice(a.asset, a.currency);
-    if (now == null) return a;
-    const cond = a.mode === 'above' ? now > a.target : now < a.target;
-    if (cond) {
-      fired = true;
-      const asset = ASSET_MAP.get(a.asset);
-      const lang = document.documentElement.lang || 'ar';
-      const name = asset ? `${asset.icon} ${asset[lang] || asset.code}` : a.asset;
-      toast(t('alerts.firedToast', {
-        asset: iso(name),
-        dir: a.mode === 'above' ? '▲' : '▼',
-        price: now.toFixed(2),
-        currency: a.currency,
-      }), { icon: '🚨', tone: 'alert', ms: 7000 });
-      return { ...a, active: false, triggeredAt: Date.now() };
+  const alerts = listAlerts();
+  if (!alerts.length) return;
+  let changed = false;
+  for (const a of alerts) {
+    if (!a.enabled) continue;
+    const cur = gramPrice(a.asset, a.currency);
+    if (!Number.isFinite(cur)) continue;
+    const met = a.direction === 'above' ? cur >= a.target : cur <= a.target;
+    if (met && !a.fired) {
+      a.fired = true;
+      a.firedAt = Date.now();
+      changed = true;
+      fireToast(a, cur);
+    } else if (!met && a.fired) {
+      a.fired = false; // إعادة تسليح بعد الابتعاد عن الحد
+      changed = true;
     }
-    return a;
+  }
+  if (changed) save(alerts); // حفظ نفس الكائنات المعدّلة — لا قراءة جديدة تُضيّع التعديل
+}
+
+function fireToast(a, current) {
+  const sym = CURRENCY_MAP.get(a.currency)?.symbol || a.currency;
+  const dirTxt = a.direction === 'above'
+    ? (get('lang') === 'ar' ? 'تجاوز' : 'reached above')
+    : (get('lang') === 'ar' ? 'هبط تحت' : 'fell below');
+  const assetName = get('lang') === 'ar' ? ASSET_MAP.get(a.asset)?.ar : ASSET_MAP.get(a.asset)?.en;
+  const msg = `🔔 ${assetName} ${dirTxt} ${iso(formatMoney(a.target))} ${sym} — ${iso(formatMoney(current))}`;
+  toast(msg, { icon: '', kind: 'gold', ms: 7000 });
+  beep();
+}
+
+/** فرز حسب الأقرب للتفعيل — يُستخدم في صفحة التنبيهات */
+export function sortedNearest() {
+  return listAlerts().slice().sort((x, y) => {
+    const onX = x.enabled ? distanceToFire(x) : Infinity;
+    const onY = y.enabled ? distanceToFire(y) : Infinity;
+    if (onX !== onY) return onX - onY;
+    return (y.createdAt || 0) - (x.createdAt || 0);
   });
-  if (fired) saveAll(list);
-  return list;
 }
 
-/** فرز حسب الأقرب للتفعيل (المواصفة) */
-export function sorted() {
-  return [...all()]
-    .map((a, i) => ({ a, i }))
-    .sort((x, y) => distanceToTrigger(x.a) - distanceToTrigger(y.a))
-    .map(x => x.a);
-}
-
-/** استبعاد spam: إشعار واحد لكل تفعيل — محقق عبر triggeredAt (يرى evaluate) */
-subscribe(() => { if (document.hidden) return; evaluate(); });
+// اشتراك احتياطي: أي تغيير أسعار من غير polling (نادر) يقيَّم أيضاً
+subscribe((changed) => {
+  if (changed.includes('prices') || changed.includes('usdRates')) evaluate();
+});

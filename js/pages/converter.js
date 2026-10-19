@@ -1,164 +1,185 @@
 /**
- * pages/converter.js — المحوّل — Phase 5.1
- * أصل واحد (كل المعادن + كل العملات في منسدل واحد) + قوالب سريعة
- * + نتائج فورية لكل العملات الظاهرة. الحساب موحّد عبر money.js.
+ * pages/converter.js — المحوّل — Phase 5
+ * أصل واحد (معادن + كل العملات في منسدل واحد) → نتائج فورية لكل العملات الظاهرة
+ * + قوالب سريعة (1 oz / 1 g / 10 g / 100 g للمعادن) + prefill من شريط الرئيسية.
  */
 
 import { get, subscribe } from '../store.js';
-import { ASSETS, CURRENCIES, ASSET_MAP, flagEmoji } from '../pools.js';
-import { formatMoney } from '../format.js';
-import { convert, usdPerUnit, usdPerGram, sensibleDecimals } from '../money.js';
+import { ASSETS, CURRENCIES, CURRENCY_MAP, ASSET_MAP, flagEmoji, pricePerGramUSD } from '../pools.js';
+import { convert } from '../money.js';
+import { formatMoney, fmtSmart, iso } from '../format.js';
 import { t } from '../i18n.js';
-import * as ui from '../ui.js';
-import { assetName, curName, curFlag, curSymbol, lang } from '../names.js';
+import { el, countUp } from '../ui.js';
+import { refresh } from '../polling.js';
 
-const Q_PRESETS_METAL = [
-  { key: 'conv.q1oz', unit: 'oz', mult: 1 },
-  { key: 'conv.q1g', unit: 'g', mult: 1 },
-  { key: 'conv.q10g', unit: 'g', mult: 10 },
-  { key: 'conv.q100g', unit: 'g', mult: 100 },
-];
+let state = { from: 'USD', amount: 1, unit: 'oz' };
+let root = null;
+let rowEls = new Map(); // code → span للتحديث الموضعي
 
 export function renderConverter(container) {
-  const el = document.createElement('section');
-  el.className = 'page';
-  el.innerHTML = `
-    <h1 class="page-title">${t('conv.title')}</h1>
-    <div class="conv-terminal card">
-      <div class="jew-form">
-        <div data-slot="src"></div>
-        <div data-slot="amount"></div>
-      </div>
-      <div data-slot="presets"></div>
-    </div>
-    <div class="card">
-      <h2 class="section-title">${t('conv.results')}</h2>
-      <div class="conv-result-list" data-slot="results"></div>
-      <p class="empty-note" data-slot="wait">${t('conv.noRates')}</p>
-    </div>`;
+  // قراءة prefill من شريط الفوركس (tile click)
+  try {
+    const pre = JSON.parse(sessionStorage.getItem('conv_prefill') || 'null');
+    if (pre?.from && pre?.to) {
+      state = { from: pre.to, amount: 1, unit: 'oz' }; // tile يبدأ بعملة
+    }
+    sessionStorage.removeItem('conv_prefill');
+  } catch { /* لا شيء */ }
 
-  container.append(el);
-  ui.bindRipples(el);
+  root = el('section', { class: 'page converter' });
 
-  const srcSlot = el.querySelector('[data-slot=src]');
-  const amountSlot = el.querySelector('[data-slot=amount]');
-  const presetsSlot = el.querySelector('[data-slot=presets]');
-  const resultsSlot = el.querySelector('[data-slot=results]');
-  const waitSlot = el.querySelector('[data-slot=wait]');
+  // ---- بطاقة الإدخال
+  const card = el('div', { class: 'card conv-card' });
+  card.append(el('h1', { class: 'page-title', text: t('conv.title') }));
 
-  let src = 'USD';
-  let amountV = 100;
-  let unit = 'oz'; // للمعادن: oz | g
+  const fromSel = el('select', { class: 'select rippleable', id: 'convFrom', 'aria-label': t('conv.from') });
+  fillFrom(fromSel);
+  fromSel.value = state.from;
+  fromSel.addEventListener('change', () => { state.from = fromSel.value; updateUnitVisibility(); renderQuick(); update(); });
 
-  /* --- مصدر واحد ذكي: معادن ثم عملات --- */
-  const l = lang();
-  const srcSelect = ui.selectEl({
-    label: t('conv.from'),
-    value: src,
-    onchange: v => { src = v; unit = ASSET_MAP.get(v)?.unit || 'oz'; paintPresets(); paint(); },
-    options: [
-      {
-        group: 'M',
-        groupLabel: l === 'ar' ? 'معادن وأصول' : 'Metals & assets',
-        items: ASSETS.map(a => ({ value: a.code, text: `${a.icon} ${a[l] || a.en}` })),
+  const amountInput = el('input', {
+    class: 'input num', type: 'number', inputmode: 'decimal', min: '0', step: 'any',
+    value: String(state.amount), 'aria-label': t('conv.amount'),
+  });
+  amountInput.addEventListener('input', () => {
+    state.amount = parseFloat(amountInput.value) || 0;
+    update();
+  });
+
+  const unitBtns = el('div', { class: 'segmented', id: 'unitSeg', role: 'group', 'aria-label': t('conv.unit') });
+  for (const [u, key] of [['oz', 'ui.oz'], ['g', 'ui.g']]) {
+    unitBtns.append(el('button', {
+      type: 'button', class: 'seg-btn rippleable', dataset: { unit: u },
+      onclick: (e) => { state.unit = u; unitBtns.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('active', b === e.currentTarget)); renderQuick(); update(); },
+    }, el('span', { text: t(key) })));
+  }
+
+  const quick = el('div', { class: 'chips quick-row', id: 'quickRow' });
+
+  card.append(
+    field(t('conv.from'), fromSel),
+    el('div', { class: 'two-col' }, field(t('conv.amount'), amountInput), field(t('conv.unit'), unitBtns)),
+    el('p', { class: 'hint', text: t('conv.quick'), 'data-i18n': 'conv.quick' }),
+    quick,
+    el('div', { class: 'usd-pill num', id: 'usdPill' }, el('small', { text: t('conv.usdValue') + ':' }), el('span', { id: 'usdVal' }, '—')),
+  );
+
+  // ---- بطاقة النتائج
+  const results = el('div', { class: 'card results' });
+  results.append(el('h2', { class: 'sec-title', text: t('conv.results') }));
+  const rows = el('div', { class: 'r-rows' });
+  for (const code of get('currencies')) {
+    const c = CURRENCY_MAP.get(code);
+    const row = el('button', { type: 'button', class: 'r-row' },
+      el('span', { class: 'r-cur num', text: `${flagEmoji(code)} ${code}` }),
+      el('span', { class: 'r-name text-dim', text: c.ar }),
+      el('span', { class: 'r-val num', text: '—' }),
+    );
+    rows.append(row);
+    rowEls.set(code, row.querySelector('.r-val'));
+  }
+  results.append(rows);
+  results.append(el('p', { class: 'hint', text: t('conv.allCurrencies') }));
+
+  root.append(card, results);
+  container.append(root);
+
+  renderQuick();
+  updateUnitVisibility();
+  update();
+
+  const unsub = subscribe((changed) => {
+    if (changed.some(k => ['prices', 'usdRates', 'currencies'].includes(k))) update();
+  });
+  return () => { unsub(); root = null; rowEls = new Map(); };
+}
+
+function field(labelText, control) {
+  return el('label', { class: 'field' }, el('span', { class: 'label', text: labelText }), control);
+}
+
+function fillFrom(sel) {
+  sel.replaceChildren();
+  const g1 = el('optgroup', { label: t('conv.metals') });
+  for (const a of ASSETS) {
+    g1.append(el('option', { value: a.code, text: `${a.icon} ${get('lang') === 'ar' ? a.ar : a.en} (${a.code})` }));
+  }
+  const g2 = el('optgroup', { label: t('conv.currencies') });
+  for (const c of CURRENCIES) {
+    g2.append(el('option', { value: c.code, text: `${flagEmoji(c.code)} ${c.code} — ${c.ar}` }));
+  }
+  sel.append(g1, g2);
+}
+
+/** إظهار اختيار الوحدة للمعادن فقط */
+function updateUnitVisibility() {
+  const isMetal = !!ASSET_MAP.has(state.from);
+  const seg = root.querySelector('#unitSeg');
+  if (seg) seg.style.display = isMetal ? '' : 'none';
+  if (!isMetal) state.unit = 'oz';
+}
+
+/** قوالب سريعة حسب نوع الأصل */
+function renderQuick() {
+  const row = root.querySelector('#quickRow');
+  if (!row) return;
+  row.replaceChildren();
+  const isMetal = ASSET_MAP.has(state.from);
+  const templates = isMetal
+    ? [['1 oz', 1, 'oz'], ['1 g', 1, 'g'], ['10 g', 10, 'g'], ['100 g', 100, 'g']]
+    : [[1], [10], [100], [1000]];
+
+  for (const tpl of templates) {
+    const label = isMetal
+      ? `${formatMoney(tpl[1], { decimals: 0 })} ${t(tpl[2] === 'g' ? 'ui.g' : 'ui.oz')}`
+      : formatMoney(tpl[0], { decimals: 0 });
+    row.append(el('button', {
+      type: 'button', class: 'chip rippleable', text: label,
+      onclick: () => {
+        if (isMetal) {
+          state.amount = tpl[1]; state.unit = tpl[2];
+          unitSegSync();
+        } else {
+          state.amount = tpl[0];
+        }
+        const inp = root.querySelector('.conv-card .input');
+        if (inp) inp.value = String(state.amount);
+        update();
       },
-      {
-        group: 'C',
-        groupLabel: l === 'ar' ? 'عملات' : 'Currencies',
-        items: CURRENCIES.map(c => ({ value: c.code, text: `${flagEmoji(c.code)} ${c[l] || c.en}` })),
-      },
-    ],
-  });
-  srcSlot.append(srcSelect);
-
-  const amount = ui.numberInput({
-    label: t('conv.amount'),
-    value: amountV, min: 0, step: 10,
-    onInput: v => { amountV = v; paint(); },
-  });
-  amountSlot.append(amount);
-
-  function paintPresets() {
-    presetsSlot.replaceChildren();
-    const a = ASSET_MAP.get(src);
-    if (!a) return; // عملات → لا قوالب
-    const items = a.unit === 'coin'
-      ? [{ key: 'conv.q1coin', unit: 'coin', mult: 1 }]
-      : a.unit === 'lb'
-        ? [{ key: 'conv.q1oz', unit: 'lb', mult: 1 }]
-        : Q_PRESETS_METAL;
-    const lbl = document.createElement('span');
-    lbl.className = 'field-label';
-    lbl.textContent = t('conv.quick');
-    const row = document.createElement('div');
-    row.className = 'chip-row';
-    items.forEach(p => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'chip';
-      b.textContent = t(p.key);
-      b.addEventListener('click', () => {
-        unit = p.unit;
-        amountV = p.mult;
-        amount.querySelector('input').value = amountV;
-        paint();
-      });
-      row.append(b);
-    });
-    presetsSlot.append(lbl, row);
+    }));
   }
+}
+function unitSegSync() {
+  const seg = root.querySelector('#unitSeg');
+  if (seg) seg.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('active', b.dataset.unit === state.unit));
+}
 
-  /** قيمة المصدر بالدولار (بحسب الوحدة)، أو null بانتظار الأسعار */
-  function sourceUsd() {
-    const a = ASSET_MAP.get(src);
-    if (a) {
-      if (a.unit === 'coin') return usdPerUnit(src) == null ? null : usdPerUnit(src) * amountV;
-      if (a.unit === 'lb') return usdPerUnit(src) == null ? null : usdPerUnit(src) * amountV;
-      if (unit === 'g') return usdPerGram(src) == null ? null : usdPerGram(src) * amountV;
-      return usdPerUnit(src) == null ? null : usdPerUnit(src) * amountV;
-    }
-    return convert(amountV, src, 'USD');
+/** التحويل الكامل: أصل → USD → كل عملة ظاهرة */
+function computeUSD() {
+  if (ASSET_MAP.has(state.from)) {
+    const code = state.from;
+    const p = get('prices')[code]?.usd;
+    if (!Number.isFinite(p)) return NaN;
+    const perUnit = state.unit === 'g' ? pricePerGramUSD(code, p) : p;
+    return perUnit * state.amount;
   }
+  return convert(state.amount, state.from, 'USD');
+}
 
-  function paint() {
-    // suffix حي بجانب الحقل
-    const suffixEl = amount.querySelector('.num-suffix');
-    const a = ASSET_MAP.get(src);
-    const suffixText = a ? (unit === 'g' ? t('conv.grams') : a.unit === 'coin' ? '' : a.unit) : src;
-    if (suffixEl) suffixEl.textContent = suffixText;
-    else if (suffixText) {
-      const s = document.createElement('span');
-      s.className = 'num-suffix';
-      s.textContent = suffixText;
-      amount.querySelector('.number-box').append(s);
-    }
-    amount._null_guard = null; // لا تحط
+function update() {
+  if (!root) return;
+  const usd = computeUSD();
+  const usdEl = root.querySelector('#usdVal');
+  if (usdEl) usdEl.textContent = Number.isFinite(usd) ? `$ ${formatMoney(usd)}` : '—';
 
-    const usd = sourceUsd();
-    const rates = get('usdRates') || {};
-    const codes = get('currencies') || [];
-    const anyRates = codes.some(c => c !== 'USD' && rates[c] != null) || rates.USD != null;
-    if (usd == null || !anyRates) {
-      resultsSlot.replaceChildren();
-      waitSlot.hidden = false;
-      return;
+  for (const code of get('currencies')) {
+    const target = rowEls.get(code);
+    if (!target) continue;
+    const v = Number.isFinite(usd) ? convert(usd, 'USD', code) : NaN;
+    if (Number.isFinite(v)) {
+      countUp(target, v, { decimals: Math.abs(v) >= 10000 ? 0 : Math.abs(v) < 1 ? 4 : 2 });
+    } else {
+      target.textContent = '—';
     }
-    waitSlot.hidden = true;
-    resultsSlot.innerHTML = codes.map((c, i) => {
-      const val = convert(usd, 'USD', c);
-      return `
-        <div class="conv-result" style="animation-delay:${Math.min(i * 25, 250)}ms">
-          <span class="cr-cur"><span class="fx-flag-small">${curFlag(c)}</span>${curName(c)}</span>
-          <span class="cr-val num" dir="ltr">${val == null ? '—' : formatMoney(val, { decimals: sensibleDecimals(val) })}</span>
-          <span class="cr-sym">${curSymbol(c)}</span>
-        </div>`;
-    }).join('');
   }
-
-  const unsub = subscribe(changed => {
-    if (changed.some(c => ['prices', 'usdRates', 'currencies', 'displayCurrency'].includes(c))) paint();
-  });
-  paintPresets();
-  paint();
-  return () => unsub();
 }

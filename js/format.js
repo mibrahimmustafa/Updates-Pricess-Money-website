@@ -70,3 +70,15 @@ export function timeAgo(dateMs, lang = 'ar') {
 export function utcDate(y, m, d) {
   return `${y}` + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
 }
+
+/** دقة عرض ذكية: ضخم → بلا منازل، صغير → منازل أكبر */
+export function fmtSmart(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  const abs = Math.abs(v);
+  let d = 2;
+  if (abs >= 10000) d = 0;
+  else if (abs >= 1000) d = 1;
+  else if (abs < 1) d = 4;
+  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: d }).format(v);
+}

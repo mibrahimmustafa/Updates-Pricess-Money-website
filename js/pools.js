@@ -5,6 +5,8 @@
 
 /** troy ounce بالجرام — ثابت فيزيائي */
 export const TROY_OZ_GRAMS = 31.1034768;
+/** رطل كيمني بالجرام — للنحاس (HG مسعّر بالرطل) */
+export const LB_GRAMS = 453.59237;
 
 /** عيارات الذهب (نسبة النقاوة) */
 export const KARATS = {
@@ -103,6 +105,25 @@ export const DEFAULT_ASSETS = Object.freeze(['XAU', 'XAG', 'XPT', 'XPD', 'HG', '
 // فهارس سريعة lookup
 export const ASSET_MAP = new Map(ASSETS.map(a => [a.code, a]));
 export const CURRENCY_MAP = new Map(CURRENCIES.map(c => [c.code, c]));
+
+/**
+ * سعر الجرم بالدولار لمعدن — الحساب الوحيد للجرام في المشروع.
+ * oz (troy) → ÷31.1034768 ، lb (نحاس) → ÷453.59237 ، coin → نفس السعر.
+ */
+export function pricePerGramUSD(assetCode, usdPrice) {
+  const a = ASSET_MAP.get(assetCode);
+  const p = Number(usdPrice);
+  if (!a || !Number.isFinite(p) || p <= 0) return NaN;
+  if (a.code === 'HG') return p / LB_GRAMS;
+  if (a.unit === 'oz') return p / TROY_OZ_GRAMS;
+  return p;
+}
+
+/** سعر الوحدة الأصلية بالدولار (أونصة/رطل/عملة) */
+export function pricePerUnitUSD(assetCode, usdPrice) {
+  const p = Number(usdPrice);
+  return Number.isFinite(p) && p > 0 ? p : NaN;
+}
 
 /** علم إيموجي من كود العملة — أول حرفين = كود الدولة ISO-2 (EGP→EG, SAR→SA, TRY→TR…) */
 export function flagEmoji(code) {

@@ -1,221 +1,317 @@
 /**
- * pages/home.js — الصفحة الرئيسية — Phase 3 (القلب)
- * شريط فوركس أفقي + بطاقات معادن + جدول جرام لكل عملة + عيارات الذهب
- * + skeleton + بانر خطأ + "آخر تحدّث" + JSON-LD + نسخ الأسعار.
+ * pages/home.js — الرئيسية (قلب التطبيق) — Phase 3
+ * شريط الفوركس (tiles LTR داخل RTL) + بطاقة لكل معدن ظاهر (أونصة + جدول جرام + عيارات الذهب)
+ * + شارة مباشر + chip استجابة + skeleton + بانر أوفلاين + نسخ بنقرة + count-up.
  */
 
 import { get, subscribe } from '../store.js';
-import { CURRENCY_MAP, KARATS, TROY_OZ_GRAMS } from '../pools.js';
-import { formatMoney, timeAgo } from '../format.js';
-import { convert, sensibleDecimals } from '../money.js';
+import { ASSET_MAP, CURRENCY_MAP, flagEmoji, pricePerGramUSD, TROY_OZ_GRAMS, LB_GRAMS, KARATS } from '../pools.js';
+import { convert } from '../money.js';
+import { formatMoney, money, iso, timeAgo, fmtSmart, LRI, PDI } from '../format.js';
 import { t } from '../i18n.js';
-import * as ui from '../ui.js';
-import { assetName, assetIcon, assetColor, curSymbol, curFlag, curName } from '../names.js';
+import { refresh } from '../polling.js';
+import { countUp, flash, copyText, toast } from '../ui.js';
+import { snapshotAge } from '../cache.js';
+
+let builtSig = '';
+let valueEls = new Map();   // vid → {el, dec} تحديث موضعي بلا إعادة بناء
+let rootEl = null;
 
 export function renderHome(container) {
-  const el = document.createElement('section');
-  el.className = 'page';
-  el.innerHTML = `
-    <div class="home-top">
-      <div data-slot="live"></div>
-      <span class="last-update text-dim" data-live="lastUpdate"></span>
-    </div>
-    <div data-slot="banner"></div>
-    <h2 class="section-title">${t('home.forexTitle')}</h2>
-    <div class="fx-strip" data-slot="fx"></div>
-    <h2 class="section-title">${t('home.metalsTitle')}</h2>
-    <div class="metals-grid" data-slot="metals"></div>`;
-
-  container.append(el);
-  ui.bindRipples(el);
-
-  const slots = {
-    live: el.querySelector('[data-slot=live]'),
-    banner: el.querySelector('[data-slot=banner]'),
-    fx: el.querySelector('[data-slot=fx]'),
-    metals: el.querySelector('[data-slot=metals]'),
-    lastUpdate: el.querySelector('[data-live=lastUpdate]'),
-  };
-
-  const badge = ui.liveBadge();
-  slots.live.append(badge);
-
-  /* ---- بنية الشاشة (تُبنى من جديد فقط عند تغيّر قائمة العملات/المعادن) ---- */
-  let builtCurrencies = '', builtMetals = '';
-
-  function buildForex() {
-    const codes = get('currencies') || [];
-    builtCurrencies = codes.join(',');
-    slots.fx.replaceChildren(...codes.map(c => {
-      const tile = document.createElement('button');
-      tile.type = 'button';
-      tile.className = 'fx-tile rippled';
-      tile.dataset.cur = c;
-      tile.title = curName(c);
-      tile.innerHTML = `
-        <span class="fx-q" dir="ltr"><span class="num">1 USD</span><span class="fx-arrow">→</span>
-          <span class="fx-flag">${curFlag(c)}</span><span class="fx-sym num">${c}</span></span>
-        <span class="fx-val num" data-live="fx">—</span>`;
-      return tile;
-    }));
-    if (!codes.length) slots.fx.textContent = ''; // حماية
-  }
-
-  function buildMetals() {
-    const mets = get('metals') || [];
-    builtMetals = mets.join(',');
-    slots.metals.replaceChildren(...mets.map(m => {
-      const a = ASSET_MAP.get(m);
-      const unitLabel = a.unit === 'coin' ? t('home.perCoin') : a.unit === 'lb' ? t('home.perLb') : t('home.perOz');
-      const card = document.createElement('article');
-      card.className = 'metal-card card card-hover';
-      card.style.setProperty('--mc', assetColor(m));
-      card.innerHTML = `
-        <div class="metal-head">
-          <span class="metal-icon" aria-hidden="true">${assetIcon(m)}</span>
-          <div><div class="metal-name">${assetName(m)}</div><div class="metal-unit num" dir="ltr">${m}</div></div>
-          <div class="metal-oz">
-            <div class="oz-val num" data-live="oz">—</div>
-            <div class="oz-usd num" dir="ltr">USD · ${unitLabel}</div>
-          </div>
-          <button class="metal-copy" type="button" aria-label="${t('a11y.copyPrice')}" title="${t('a11y.copyPrice')}">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-          </button>
+  rootEl = document.createElement('section');
+  rootEl.className = 'page home';
+  rootEl.innerHTML = `
+    <header class="home-head">
+      <div class="home-head-text">
+        <h1 class="page-title" data-i18n="home.title"></h1>
+        <div class="home-status" dir="ltr">
+          <span class="live-badge" id="liveBadge"><span class="dot" aria-hidden="true"></span><span data-i18n="ui.live"></span></span>
+          <span class="latency-chip" id="latencyChip" data-vid="__lat"></span>
         </div>
-        <table class="gram-table"><tbody data-slot="grams"></tbody></table>
-        ${m === 'XAU' ? '<div class="karats" data-slot="karats"></div>' : ''}`;
-      card.querySelector('.metal-copy').addEventListener('click', () => {
-        ui.copyText(String(card.querySelector('[data-live=oz]').textContent.replace(/[^\d.,]/g, '')), `${m} USD`);
-      });
-      return card;
-    }));
-  }
+      </div>
+      <button class="btn btn-ghost rippleable" id="refreshBtn" aria-label="${t('ui.refresh')}" data-i18n-attr="aria-label:ui.refresh">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+        <span data-i18n="ui.refresh"></span>
+      </button>
+    </header>
 
-  /* ---- الرسم (يُستدعى مع كل تحديث — تحديث قيم فقط بلا إعادة بناء) ---- */
-  function paint() {
-    const rates = get('usdRates') || {};
-    const prices = get('prices') || {};
-    const disp = get('displayCurrency') || 'EGP';
-    const online = get('online');
-    const lu = get('lastUpdate');
+    <div class="net-banner" id="netBanner" role="alert" hidden>
+      <span aria-hidden="true">📡</span><span id="netText">${t('ui.offline')}</span>
+      <button class="btn btn-sm rippleable" id="bannerRetry">${t('ui.retry')}</button>
+    </div>
 
-    ui.updateLiveBadge(badge, get('latencyMs'), online);
-    paintLastUpdate(lu);
+    <section aria-label="${t('home.fxTitle')}" data-i18n-attr="aria-label:home.fxTitle">
+      <h2 class="sec-title" data-i18n="home.fxTitle"></h2>
+      <div class="fx-strip" id="fxStrip" role="list"></div>
+    </section>
 
-    // بانر الشبكة
-    if (!online) {
-      if (!slots.banner.childElementCount) {
-        slots.banner.append(ui.netBanner({ onRetry: () => import('../polling.js').then(p => p.force()) }));
-      }
-    } else if (slots.banner.childElementCount) slots.banner.replaceChildren();
+    <section aria-label="${t('home.assetsTitle')}" data-i18n-attr="aria-label:home.assetsTitle">
+      <div class="sec-title-row">
+        <h2 class="sec-title" data-i18n="home.assetsTitle"></h2>
+        <span class="hint">${t('home.tapToCopy')}</span>
+      </div>
+      <div class="assets" id="assetsGrid" aria-live="off"></div>
+    </section>
 
-    // الفوركس
-    slots.fx.querySelectorAll('.fx-tile').forEach(tile => {
-      const v = rates[tile.dataset.cur];
-      tile.querySelector('[data-live=fx]').textContent = v != null ? formatMoney(v, { decimals: sensibleDecimals(v) }) : '—';
-    });
+    <p class="last-update" id="lastUpdate" aria-live="polite"></p>
+  `;
+  container.append(rootEl);
+  valueEls = buildStructure(rootEl);
 
-    // بطاقات المعادن
-    [...slots.metals.children].forEach((card, i) => {
-      const m = (get('metals') || [])[i];
-      if (!m) return;
-      const up = prices[m]?.usd ?? null;
-      card.querySelector('[data-live=oz]').textContent = up != null ? formatMoney(up) : '—';
-      paintTable(card.querySelector('[data-slot=grams]'), m, up, rates, disp);
-      const karatSlot = card.querySelector('[data-slot=karats]');
-      if (karatSlot && m === 'XAU') paintKarats(karatSlot, up, rates, disp);
-    });
-
-    updateJsonLd();
-  }
-
-  function paintLastUpdate(lu) {
-    if (!lu) { slots.lastUpdate.textContent = ''; return; }
-    slots.lastUpdate.textContent = Date.now() - lu < 5000 ? t('live.updatedNow') : t('live.updatedAgo', { t: timeAgo(lu) });
-  }
-
-  function paintTable(tbody, m, up, rates, disp) {
-    const codes = get('currencies') || [];
-    const sig = codes.join(',') + '|' + (up ?? 'x');
-    if (tbody.dataset.sig === sig) return;
-    tbody.dataset.sig = sig;
-    const rows = codes.map((c, idx) => {
-      const val = up != null ? convert(up, 'USD', c) : null;
-      return `
-        <tr class="gram-row" style="animation-delay:${Math.min(idx * 30, 300)}ms">
-          <td title="${curName(c)}"><span class="fx-flag-small">${curFlag(c)}</span>${curName(c)}</td>
-          <td><span class="gram-value num">${val == null ? '—' : formatMoney(val, { decimals: sensibleDecimals(val) })}</span><span class="gram-symbol">${curSymbol(c)}</span></td>
-        </tr>`;
-    }).join('');
-    tbody.innerHTML = rows;
-  }
-
-  function paintKarats(slot, ozUp, rates, disp) {
-    const r = rates[disp];
-    const sig = Object.keys(KARATS).join() + '|' + (ozUp ?? 'x') + '|' + (r ?? 'x') + '|' + disp;
-    if (slot.dataset.sig === sig) return;
-    slot.dataset.sig = sig;
-    slot.innerHTML = Object.keys(KARATS).map(k => {
-      const v = ozUp != null && r != null ? (ozUp / TROY_OZ_GRAMS) * KARATS[k] * r : null;
-      return `
-        <div class="karat-cell${k === '21K' ? ' core' : ''}">
-          <span class="k num" dir="ltr">${k}</span><span class="v num">${v == null ? '—' : formatMoney(v, { decimals: sensibleDecimals(v) })}</span>
-          <span class="gram-symbol">${curSymbol(disp)}</span>
-        </div>`;
-    }).join('');
-  }
-
-  /* ---- Skeleton أول تحميل ---- */
-  function ensureSkeletons() {
-    if (!get('lastUpdate') && !slots.metals.querySelector('.skel-card')) {
-      ui.skeletonBlocks(slots.metals, 3, 'skel-card');
-    }
-  }
-
-  /* ---- JSON-LD للأسعار (SEO) ---- */
-  function updateJsonLd() {
-    const prices = get('prices') || {};
-    const lu = get('lastUpdate');
-    const xau = prices.XAU?.usd;
-    if (!xau || !lu) return;
-    const obj = {
-      '@context': 'https://schema.org',
-      '@type': 'PriceSpecification',
-      name: 'Gold price per troy ounce (XAU)',
-      price: xau,
-      priceCurrency: 'USD',
-      dateModified: new Date(lu).toISOString(),
-    };
-    let elx = document.getElementById('ld-prices');
-    if (!elx) {
-      elx = document.createElement('script');
-      elx.type = 'application/ld+json';
-      elx.id = 'ld-prices';
-      document.head.append(elx);
-    }
-    elx.textContent = JSON.stringify(obj);
-  }
-
-  function rebuildIfNeeded() {
-    const cs = (get('currencies') || []).join(',');
-    const ms = (get('metals') || []).join(',');
-    if (cs !== builtCurrencies) buildForex();
-    if (ms !== builtMetals) { slots.metals.replaceChildren(); buildMetals(); }
-  }
-
-  rebuildIfNeeded();
-  paint();
-  ensureSkeletons();
-
-  const unsub = subscribe(changed => {
-    if (changed.some(c => ['currencies', 'metals'].includes(c))) rebuildIfNeeded();
-    if (changed.some(c => ['prices', 'usdRates', 'online', 'latencyMs', 'lastUpdate'].includes(c))) {
-      slots.metals.querySelectorAll('.skel-card').forEach(s => s.remove());
-      paint();
-    }
-    if (changed.includes('lastUpdate')) paintLastUpdate(get('lastUpdate'));
+  rootEl.querySelector('#refreshBtn').addEventListener('click', () => {
+    refresh(); toast(t('ui.loading'), { kind: 'gold', ms: 1800 });
   });
+  rootEl.querySelector('#bannerRetry').addEventListener('click', () => refresh());
 
-  const tick = setInterval(() => paintLastUpdate(get('lastUpdate')), 20000);
-  return () => { unsub(); clearInterval(tick); };
+  const paint = () => paintAll(rootEl, valueEls);
+  paint();
+  const unsub = subscribe(paint);
+  return () => { unsub(); rootEl = null; valueEls = new Map(); };
+}
+
+/* ============ البناء الهيكلي (يتغير فقط عند تغيّر قوائم العرض) ============ */
+function sigOf() {
+  return JSON.stringify([get('currencies'), get('metals')]);
+}
+
+function skeletonHTML() {
+  return `
+    <div class="fx-strip"><div class="skeleton fx-tile"></div><div class="skeleton fx-tile"></div><div class="skeleton fx-tile"></div><div class="skeleton fx-tile"></div></div>
+    <div class="assets">
+      ${'<div class="card metal-card skeleton-card"></div>'.repeat(3)}
+    </div>`;
+}
+
+function buildStructure(root) {
+  const sig = sigOf();
+  if (sig === builtSig) return valueEls;
+  builtSig = sig;
+
+  const strip = root.querySelector('#fxStrip');
+  const grid = root.querySelector('#assetsGrid');
+  strip.replaceChildren(); grid.replaceChildren();
+  const els = new Map();
+
+  // ---- شريط الفوركس (بدون USD لأنه الأساس) — كل tile داخله dir=ltr مفروض
+  for (const code of get('currencies')) {
+    if (code === 'USD') continue;
+    const c = CURRENCY_MAP.get(code);
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'fx-tile rippleable';
+    tile.setAttribute('role', 'listitem');
+    tile.dataset.cur = code;
+    tile.setAttribute('aria-label', `1 USD to ${code}`);
+    tile.innerHTML = `
+      <span class="fx-line" dir="ltr">
+        <span class="fx-from num">1 USD</span>
+        <span class="fx-arrow" aria-hidden="true">→</span>
+        <span class="fx-to num">${flagEmoji(code)} ${code}</span>
+      </span>
+      <span class="fx-value num" data-vid="fx:${code}">—</span>`;
+    tile.addEventListener('click', () => {
+      try { sessionStorage.setItem('conv_prefill', JSON.stringify({ from: 'USD', to: code, amount: 1 })); } catch {}
+      location.hash = '#/converter';
+    });
+    strip.append(tile);
+    els.set(`fx:${code}`, { el: tile.querySelector('.fx-value'), dec: 2 });
+  }
+
+  // ---- بطاقات الأصول الظاهرة
+  for (const code of get('metals')) {
+    const a = ASSET_MAP.get(code);
+    if (!a) continue;
+    const card = document.createElement('article');
+    card.className = 'card metal-card';
+    card.dataset.asset = code;
+    card.style.setProperty('--mc', a.color);
+
+    const unitLabel = code === 'HG' ? 'ui.usdPerLb' : a.unit === 'coin' ? 'ui.usdPerCoin' : 'ui.usdPerOz';
+    card.innerHTML = `
+      <header class="mc-head">
+        <span class="mc-icon" aria-hidden="true">${a.icon}</span>
+        <div class="mc-name">
+          <h3>${a.ar} <small class="num">${code}</small></h3>
+        </div>
+        <div class="mc-oz">
+          <span class="mc-oz-val num" data-vid="oz:${code}">—</span>
+          <small data-i18n="${unitLabel}"></small>
+        </div>
+      </header>
+      <div class="gram-table" role="table" aria-label="${code}"></div>
+      ${code === 'XAU' ? `
+      <div class="karat-box">
+        <div class="kb-head" data-i18n="home.karatBreakdown"></div>
+        <div class="kb-row k-head"><span data-i18n="jw.karat"></span><span data-i18n="ui.perGram"></span></div>
+        <div class="kb-body"></div>
+        <p class="hint">${t('home.karatNote')}</p>
+      </div>` : ''}`;
+
+    // صفوف الجرم/الوحدة لكل عملة ظاهرة
+    const table = card.querySelector('.gram-table');
+    const perGram = a.unit !== 'coin' && code !== 'HG';
+    const rowLabel = perGram ? 'ui.perGram' : 'ui.perCoin';
+    for (const cur of get('currencies')) {
+      const cc = CURRENCY_MAP.get(cur);
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'g-row';
+      row.setAttribute('role', 'row');
+      row.setAttribute('aria-label', `${a.en} ${t(rowLabel)} ${formatMoney(0)} ${cc.symbol} — ${t('ui.copied')}`);
+      row.innerHTML = `
+        <span class="g-cur num">${flagEmoji(cur)} ${cur}</span>
+        <span class="g-name text-dim">${cc.ar}</span>
+        <span class="g-val num" data-vid="${rowKey(code, cur)}">—</span>`;
+      row.addEventListener('click', () => {
+        const v = row.querySelector('.g-val')?.dataset.copiedVal || '';
+        if (v) copyText(v, `${t('ui.copied')} — ${cur}`);
+      });
+      table.append(row);
+      els.set(rowKey(code, cur), {
+        el: row.querySelector('.g-val'),
+        dec: 2,
+        compute: () => computeAsset(code, cur, perGram),
+      });
+    }
+
+    // عيارات الذهب (عرض فقط — بالعملة الافتراضية)
+    if (code === 'XAU') {
+      const body = card.querySelector('.kb-body');
+      for (const [k, purity] of Object.entries(KARATS)) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'kb-row g-row';
+        row.innerHTML = `
+          <span class="k-badge">${k} <small class="num">${iso(purity)}</small></span>
+          <span class="g-val num" data-vid="k:${k}">—</span>`;
+        row.addEventListener('click', () => {
+          const v = row.querySelector('.g-val')?.dataset.copiedVal || '';
+          if (v) copyText(v, t('ui.copied'));
+        });
+        body.append(row);
+        els.set(`k:${k}`, { el: row.querySelector('.g-val'), dec: 2, compute: () => computeKarat(purity) });
+      }
+    }
+
+    grid.append(card);
+    els.set(`oz:${code}`, {
+      el: card.querySelector(`[data-vid="oz:${code}"]`),
+      dec: 2,
+      compute: () => get('prices')[code]?.usd ?? NaN,
+      flashable: true,
+    });
+  }
+  return els;
+}
+
+function rowKey(code, cur) { return `g:${code}:${cur}`; }
+
+/** سعر المعدن بالعملة (جرام أو وحدة أصلي) */
+function computeAsset(code, cur, perGram) {
+  const p = get('prices')[code]?.usd;
+  let v;
+  if (perGram) {
+    const g = pricePerGramUSD(code, p);
+    v = convert(g || NaN, 'USD', cur);
+  } else {
+    v = p ? convert(NaN2(p), 'USD', cur) : NaN; // عملة رقمية/نحاس: سعر الوحدة الأم مثل ما هو
+  }
+  return v;
+}
+function NaN2(x) { return Number.isFinite(x) ? x : NaN; }
+
+function computeKarat(purity) {
+  const cur = get('displayCurrency');
+  const g = pricePerGramUSD('XAU', get('prices').XAU?.usd);
+  return convert(g * purity, 'USD', cur);
+}
+
+/* ============ التحديث الموضعي (كل دورة أو تغيير حالة) ============ */
+let rafPending = false;
+function paintAll(root, els) {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    if (!rootEl) return;
+    updateLatency(root);
+    updateNetwork(root);
+    updateLastUpdate(root);
+    updateValues(els);
+  });
+}
+
+function updateLatency(root) {
+  const chip = root.querySelector('#latencyChip');
+  const ms = get('latencyMs');
+  const badge = root.querySelector('#liveBadge');
+  if (!chip) return;
+  if (Number.isFinite(ms)) {
+    chip.textContent = `${iso('\u21C5 ' + Math.round(ms) + ' ms')}`;
+    chip.classList.toggle('ok', ms < 700);
+    chip.classList.toggle('warn', ms >= 700 && ms < 1600);
+    chip.classList.toggle('bad', ms >= 1600);
+    badge?.classList.toggle('on', true);
+  } else {
+    chip.textContent = iso('— ms');
+    chip.classList.remove('ok', 'warn', 'bad');
+  }
+}
+
+function updateNetwork(root) {
+  const banner = root.querySelector('#netBanner');
+  const online = get('online');
+  const hasAny = Object.keys(get('prices') || {}).length > 0;
+  const stale = !!get('stale');
+  if (!banner) return;
+  banner.hidden = !(!online || (stale && hasAny === false));
+  if (!banner.hidden) {
+    const age = snapshotAge();
+    const ageTxt = Number.isFinite(age) && age < 7 * 24 * 3600e3 ? timeAgo(Date.now() - age, get('lang')) : '';
+    root.querySelector('#netText').innerHTML = `${t('ui.offline')}${ageTxt ? ` (${ageTxt})` : ''}`;
+  }
+  root.querySelector('#liveBadge')?.classList.toggle('offline', !online);
+}
+
+function updateLastUpdate(root) {
+  const p = root.querySelector('#lastUpdate');
+  const lu = get('lastUpdate');
+  if (!lu) { p.textContent = t('ui.noData'); return; }
+  p.innerHTML = `${t('ui.updated')}: ${timeAgo(lu, get('lang'))}`;
+}
+
+function updateValues(els) {
+  for (const [, item] of els) {
+    const v = item.compute ? item.compute() : NaN;
+    const target = Number.isFinite(v) ? v : NaN;
+    const shown = Number.isFinite(target);
+    if (shown) {
+      const prev = item.el.dataset.v;
+      countUp(item.el, target, { decimals: item.dec || 2 });
+      item.el.dataset.copiedVal = fmtClipboard(target);
+      if (item.flashable && prev != null && Number(prev) !== target) {
+        flash(item.el, target > Number(prev || 0));
+      }
+    } else {
+      item.el.textContent = '—';
+      delete item.el.dataset.copiedVal;
+    }
+  }
+  // قيم FX tiles (تحويل مباشر)
+  for (const code of get('currencies')) {
+    if (code === 'USD') continue;
+    const item = els.get(`fx:${code}`);
+    if (!item) continue;
+    const v = convert(1, 'USD', code);
+    if (Number.isFinite(v)) {
+      countUp(item.el, v, { decimals: v >= 1000 ? 0 : 2 });
+      item.el.dataset.copiedVal = fmtClipboard(v);
+    }
+  }
+}
+
+function fmtClipboard(v) {
+  const abs = Math.abs(v);
+  const d = abs >= 10000 ? 0 : abs < 1 ? 4 : 2;
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: d }).format(v);
 }

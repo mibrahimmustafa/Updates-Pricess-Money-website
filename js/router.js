@@ -6,6 +6,7 @@
 import { t, applyI18n } from './i18n.js';
 import { subscribe } from './store.js';
 import { renderPage } from './pages/registry.js';
+import { applyRouteMeta } from './seo.js';
 
 /** جدول المسارات: regex بسيط مقابل اسم الصفحة (registry يحمل الربط) */
 const UNKNOWN = 'home';
@@ -36,7 +37,7 @@ function render() {
   c.replaceChildren();                                // تنظيف حاسم لمنع تسريب DOM
   cleanup = renderPage[name](c) || null;              // كل صفحة تعيد دالة تنظيف اختيارية
   highlight(name);
-  document.title = titleFor(name);
+  applyRouteMeta(name);                                // meta + canonical + og لكل مسار
   window.scrollTo({ top: 0, behavior: 'instant' });
   attachDelegation(c);
 }

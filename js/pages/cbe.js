@@ -1,94 +1,164 @@
 /**
- * pages/cbe.js — أسعار البنك المركزي المصري — Phase 8
- * جدول: السعر الرسمي CBE مقابل السوق الحي + الفرق والفرق النسبي مع تلوين.
+ * pages/cbe.js — أسعار البنك المركزي المصري (CBE) — Phase 8
+ * جدول: العملة | رسمي CBE | السوق الحي | الفرق | الفرق % — تلوين الانحراف + بحث + skeleton + fallback.
  */
 
-import { get, set, subscribe } from '../store.js';
+import { get, subscribe } from '../store.js';
+import { CURRENCY_MAP, flagEmoji } from '../pools.js';
 import * as api from '../api.js';
-import { formatMoney, timeAgo } from '../format.js';
-import { sensibleDecimals } from '../money.js';
+import { convert } from '../money.js';
+import { formatMoney, iso, fmtSmart } from '../format.js';
 import { t } from '../i18n.js';
-import * as ui from '../ui.js';
-import { curName, curFlag, lang } from '../names.js';
+import { el, toast } from '../ui.js';
+import { refresh } from '../polling.js';
 
-const GAP_TONES = { near: 'diff-near', far: 'diff-far', very: 'diff-very' };
+let cbeMap = null;     // {quote: {rate, date}}
+let cbeDate = '';
+let searchQ = '';
+let root = null;
+let toc = 0;
 
 export function renderCBE(container) {
-  const el = document.createElement('section');
-  el.className = 'page';
-  el.innerHTML = `
-    <h1 class="page-title">${t('cbe.title')}</h1>
-    <p class="text-dim" style="margin:-8px 0 0">${t('cbe.subtitle')}</p>
-    <div data-slot="banner"></div>
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-        <h2 class="section-title">CBE</h2>
-        <span class="text-dim num" style="font-size:12px" data-slot="updated"></span>
-      </div>
-      <div style="overflow-x:auto">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>${t('cbe.table.currency')}</th>
-              <th style="text-align:end">${t('cbe.table.cbe')}</th>
-              <th style="text-align:end">${t('cbe.table.mkt')}</th>
-              <th style="text-align:end">${t('cbe.table.diff')}</th>
-              <th style="text-align:end">${t('cbe.table.pct')}</th>
-            </tr>
-          </thead>
-          <tbody data-slot="rows"></tbody>
-        </table>
-      </div>
-      <p class="empty-note" data-slot="wait">${t('cbe.waiting')}</p>
-    </div>`;
+  root = el('section', { class: 'page cbe' });
 
-  container.append(el);
-  ui.bindRipples(el);
+  const card = el('div', { class: 'card cbe-card' });
+  card.append(el('h1', { class: 'page-title', text: t('cbe.title') }));
+  card.append(el('p', { class: 'hint', text: t('cbe.note') }));
 
-  const rowsSlot = el.querySelector('[data-slot=rows]');
-  const updatedSlot = el.querySelector('[data-slot=updated]');
-  const waitSlot = el.querySelector('[data-slot=wait]');
-  const bannerSlot = el.querySelector('[data-slot=banner]');
+  const search = el('input', {
+    class: 'input', type: 'search', placeholder: t('cbe.search'),
+    'data-i18n-attr': 'placeholder:cbe.search',
+  });
+  search.addEventListener('input', () => { searchQ = search.value.trim().toLowerCase(); paintRows(); });
+  card.append(search);
 
-  function paint() {
-    const cbe = get('cbeRates');
-    const rates = get('usdRates') || {};
-    updatedSlot.textContent = get('lastUpdate') ? timeAgo(get('lastUpdate')) : '';
+  const caption = el('p', { class: 'cbe-caption', 'aria-live': 'polite' });
+  card.append(caption);
 
-    if (!cbe || !Object.keys(cbe).length) {
-      rowsSlot.innerHTML = `<tr><td colspan="5" class="empty-note">${t('cbe.none')}</td></tr>`;
-      return;
-    }
-    waitSlot.hidden = Object.keys(rates).length > 0;
+  const table = el('div', { class: 't-wrap', role: 'table', 'aria-label': t('cbe.title') });
+  table.append(headerRow());
+  const body = el('div', { class: 't-body', id: 'cbeBody' });
+  table.append(body);
+  card.append(table);
 
-    const codes = Object.keys(cbe).filter(c => c !== 'USD');
-    rowsSlot.innerHTML = codes.map(code => {
-      const off = Number(cbe[code]);
-      const mkt = rates[code];
-      if (!Number.isFinite(off)) return '';
-      const diff = mkt != null ? mkt - off : null;
-      const pct = diff != null && off ? (diff / off) * 100 : null;
-      const apct = pct == null ? null : Math.abs(pct);
-      const tone = apct == null ? '' : apct < 2 ? 'near' : apct < 10 ? 'far' : 'very';
-      const label = tone === 'near' ? t('cbe.near') : tone === 'far' ? t('cbe.far') : t('cbe.veryFar');
-      return `
-        <tr title="${curName(code)} · ${label}">
-          <td><span class="fx-flag-small">${curFlag(code)}</span> ${curName(code)} <span class="num text-dim" dir="ltr">${code}</span></td>
-          <td class="num-cell" dir="ltr">${formatMoney(off, { decimals: sensibleDecimals(off) })}</td>
-          <td class="num-cell" dir="ltr">${mkt != null ? formatMoney(mkt, { decimals: sensibleDecimals(mkt) }) : '—'}</td>
-          <td class="num-cell ${tone ? GAP_TONES[tone] : ''}" dir="ltr">${diff == null ? '—' : (diff >= 0 ? '+' : '') + formatMoney(diff, { decimals: sensibleDecimals(diff) })}</td>
-          <td class="num-cell ${tone ? GAP_TONES[tone] : ''}" dir="ltr">${pct == null ? '—' : (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'}</td>
-        </tr>`;
-    }).join('');
+  root.append(card);
+  container.append(root);
+
+  const unsub = subscribe((changed) => {
+    if (changed.some(k => ['usdRates', 'currencies'].includes(k))) paintRows();
+  });
+  paintRows();
+
+  return () => { unsub(); root = null; };
+}
+
+function headerRow() {
+  const h = el('div', { class: 't-row t-head', role: 'row' });
+  for (const text of [''] .concat([t('cbe.official'), t('cbe.market'), t('cbe.diff'), t('cbe.diffPct')])) {
+    h.append(el('span', { class: 't-cell', text }));
+  }
+  return h;
+}
+
+function paintRows() {
+  const body = root?.querySelector('#cbeBody');
+  if (!body || !document.contains(body)) return;
+  body.replaceChildren();
+
+  if (!cbeMap) {
+    body.append(skeletonRows(6));
+    load();
+    return;
   }
 
-  /* جلب رسمي فوري عند الفتح + تحديث store مباشرة */
-  import("./../polling.js").then(() => { /* الدورة تشتغل من main */ });
-  api.fetchCBERates().then(r => { if (r) set({ cbeRates: r }); });
-
-  const unsub = subscribe(changed => {
-    if (changed.some(c => ['cbeRates', 'usdRates', 'prices', 'lastUpdate'].includes(c))) paint();
+  const codes = get('currencies').filter(code => code !== 'USD' && cbeMap[code]);
+  const filtered = codes.filter(code => {
+    if (!searchQ) return true;
+    const c = CURRENCY_MAP.get(code);
+    return `${code} ${c?.ar} ${c?.en}`.toLowerCase().includes(searchQ);
   });
-  paint();
-  return () => unsub();
+  if (!filtered.length) {
+    body.append(el('div', { class: 'empty-state' },
+      el('span', { class: 'es-icon', text: '🏦', 'aria-hidden': 'true' }),
+      el('p', { text: t('ui.noData') })));
+    return;
+  }
+
+  const caption = root.querySelector('.cbe-caption');
+  caption.textContent = cbeDate ? t('cbe.updatedAt', { date: iso(cbeDate) }) : '';
+
+  for (const code of filtered) {
+    const c = CURRENCY_MAP.get(code);
+    const official = cbeMap[code]?.rate;
+    const market = get('usdRates')[code];
+    body.append(row(code, c, official, market));
+  }
+}
+
+function row(code, c, official, market) {
+  const row = el('div', { class: 't-row cbe-row', role: 'row' });
+  const curCell = el('span', { class: 't-cell t-cur' },
+    el('span', { class: 'num', text: `${flagEmoji(code)} ${code}` }),
+    el('span', { class: 't-name text-dim', text: c?.ar || '' }));
+  const off = Number.isFinite(official) ? iso(fmtSmart(official)) : '—';
+  const mk = Number.isFinite(market) ? iso(fmtSmart(market)) : '—';
+
+  let diff = NaN, pct = NaN;
+  if (Number.isFinite(official) && Number.isFinite(market)) {
+    diff = market - official;
+    pct = (diff / official) * 100;
+  }
+  const cls = Number.isFinite(pct) ? (Math.abs(pct) < 2 ? 'ok' : Math.abs(pct) < 5 ? 'warn' : 'bad') : '';
+
+  row.append(
+    curCell,
+    el('span', { class: 't-cell num' }, off),
+    el('span', { class: 't-cell num' }, mk),
+    el('span', { class: `t-cell num badge-diff ${cls}` },
+      Number.isFinite(diff) ? `${diff >= 0 ? '+' : '−'}${iso(fmtSmart(Math.abs(diff)))}` : '—'),
+    el('span', { class: `t-cell num badge-diff ${cls}` },
+      Number.isFinite(pct) ? `${pct >= 0 ? '+' : '−'}${iso(Math.abs(pct).toFixed(2))}%` : '—'),
+  );
+  return row;
+}
+
+async function load() {
+  const myTok = ++toc;
+  try {
+    const map = await api.getCBERates();
+    if (myTok !== toc || !root) return;
+    cbeMap = map;
+    cbeDate = Object.values(map)[0]?.date || '';
+    paintRows();
+  } catch (e) {
+    console.error('[cbe] فشل تحميل بيانات البنك المركزي:', e?.message || e);
+    if (myTok !== toc || !root) return;
+    cbeMap = null;
+    paintUnavailable();
+  }
+}
+
+function paintUnavailable() {
+  const body = root?.querySelector('#cbeBody');
+  if (!body) return;
+  body.replaceChildren(el('div', { class: 'empty-state' },
+    el('span', { class: 'es-icon', text: '🏦', 'aria-hidden': 'true' }),
+    el('p', { text: t('cbe.unavailable') }),
+    el('button', { type: 'button', class: 'btn btn-ghost rippleable', text: t('ui.retry'),
+      onclick: () => { cbeMap = null; paintRows(); } })));
+}
+
+function skeletonRows(n) {
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    rows.push(el('div', { class: 't-row' },
+      el('div', { class: 'skeleton', style: `height:18px;width:${60 + (i % 4) * 12}%` }),
+      el('div', { class: 'skeleton', style: 'height:14px;width:16%' }),
+      el('div', { class: 'skeleton', style: 'height:14px;width:16%' }),
+      el('div', { class: 'skeleton', style: 'height:14px;width:14%' }),
+      el('div', { class: 'skeleton', style: 'height:14px;width:14%' })));
+  }
+  const wrap = el('div', {});
+  rows.forEach(r => wrap.append(r));
+  return wrap;
 }

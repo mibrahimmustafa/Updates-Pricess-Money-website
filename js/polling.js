@@ -1,88 +1,95 @@
 /**
- * polling.js — دورة 30 ثانية ذكية — Task 2.3
- *  - تتوقف عند document.hidden وتستأنف بجلب فوري عند العودة.
- *  - كل نجاح يحدّث store ويكتب snapshot في cache (SWR).
+ * polling.js — الدورة الذكية — Task 2.3
+ * 30s + إيقاف عند document.hidden + جلب فوري عند العودة + ساعة استجابة حقيقية.
  */
 
+import * as store from './store.js';
 import * as api from './api.js';
-import { get, set } from './store.js';
-import { saveSnapshot } from './cache.js';
-import { measure } from './stopwatch.js';
+import * as cache from './cache.js';
+import { start as swStart } from './stopwatch.js';
+import * as alertsEngine from './alertsEngine.js';
+import { record as recordHistory } from './history.js';
+import { updatePriceLd } from './seo.js';
 
-const INTERVAL = 30_000; // احترام كاش gold-api ~30s
-
+const INTERVAL = 30000;
 let timer = null;
-let inflight = false;
-let running = false;
-const visibilityHandlers = [];
+let busy = false;
+let unsubPrefs = null;
+let debounceT = null;
 
-/** جلب دوري واحد: أصول + عملات بالتوازي، القياس الحقيقي بالساعة */
-export async function fetchOnce() {
-  if (inflight) return;
-  inflight = true;
-  try {
-    const codes = get('currencies') || [];
-    const metals = get('metals') || [];
-    const { result, ms } = await measure(() => Promise.allSettled([
-      api.fetchAllAssets(metals),
-      api.fetchUsdRates(codes),
-      api.fetchCBERates(),
-    ]));
-    const [assets, rates, cbe] = result;
-
-    const patch = { latencyMs: Math.round(ms) };
-    if (rates.status === 'fulfilled') patch.usdRates = rates.value;
-    if (assets.status === 'fulfilled') {
-      patch.prices = assets.value;
-      patch.lastUpdate = Date.now();
-      patch.online = true;
-      saveSnapshot({
-        prices: assets.value,
-        usdRates: rates.status === 'fulfilled' ? rates.value : get('usdRates'),
-        lastUpdate: patch.lastUpdate,
-      });
-    } else {
-      patch.online = false; // بانر الشبكة يظهر تلقائياً من الشاشات
-    }
-    if (cbe.status === 'fulfilled' && cbe.value) patch.cbeRates = cbe.value;
-    set(patch);
-  } catch {
-    set({ online: false });
-  } finally {
-    inflight = false;
-  }
-}
-
-function schedule() {
-  stopTimer();
-  timer = setInterval(fetchOnce, INTERVAL);
-}
-
-function stopTimer() {
-  if (timer) { clearInterval(timer); timer = null; }
-}
-
+/** بدء الدورة — يُستدعى مرة واحدة من main.js */
 export function start() {
-  if (running) return;
-  running = true;
-  fetchOnce(); // جلب فوري أول
-  schedule();
+  // 1) عرض اللقطة فوراً (Stale) — إن وُجدت
+  const snap = cache.getSnapshot();
+  if (snap) {
+    store.set({
+      prices: snap.prices || {},
+      usdRates: snap.usdRates || {},
+      lastUpdate: snap.savedAt || snap.lastUpdate || Date.now(),
+      stale: true,
+    });
+  }
+  // 2) جلب حي أول
+  refresh();
+  // 3) دورة كل 30 ثانية (تتوقف أثناء إخفاء التبويب)
+  timer = setInterval(() => { if (!document.hidden) refresh(); }, INTERVAL);
+  // 4) عودة للتبويب → جلب فوري
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !store.get('staleFetchOnly')) refresh();
+  });
+  // 5) تغيير قوائم العرض → إعادة جلب (مع debounce ضد العصف عند تحرير chips متتالية)
+  unsubPrefs = store.subscribe((changed) => {
+    if (changed.some(k => k === 'currencies' || k === 'metals')) {
+      clearTimeout(debounceT);
+      debounceT = setTimeout(refresh, 600);
+    }
+  });
+}
 
-  const onVisible = () => {
-    if (!document.hidden) fetchOnce(); // عودة للتبويب = جلب فوري
-  };
-  document.addEventListener('visibilitychange', onVisible);
-  visibilityHandlers.push([document, 'visibilitychange', onVisible]);
+/** جلب أسعار حي + قياس الاستجابة + حفظ + تقييم تنبيهات + SEO */
+export async function refresh() {
+  if (busy) return;
+  busy = true;
+  const sw = swStart();
+  const currencies = store.get('currencies') || [];
+  const metals = store.get('metals') || [];
+  let hadSuccess = false;
+
+  const [ratesRes, assetsRes] = await Promise.allSettled([
+    api.getRates(currencies),
+    api.getAssetPrices(metals),
+  ]);
+
+  const usdRates = { ...(store.get('usdRates') || {}) };
+  if (ratesRes.status === 'fulfilled') { Object.assign(usdRates, ratesRes.value); hadSuccess = true; }
+  usdRates.USD = 1;
+
+  const prices = { ...(store.get('prices') || {}) };
+  if (assetsRes.status === 'fulfilled') {
+    Object.assign(prices, assetsRes.value.prices);
+    if (assetsRes.value.failed.length === 0) hadSuccess = true;
+    else if (Object.keys(assetsRes.value.prices).length) hadSuccess = true;
+  }
+
+  store.set({
+    usdRates, prices,
+    online: hadSuccess || navigator.onLine,
+    stale: hadSuccess ? false : !!store.get('stale'),
+    latencyMs: sw.ms(),
+    ...(hadSuccess ? { lastUpdate: Date.now() } : {}),
+  });
+
+  if (hadSuccess) {
+    cache.saveSnapshot({ prices: store.get('prices'), usdRates: store.get('usdRates'), lastUpdate: store.get('lastUpdate') });
+    recordHistory(store.get('prices'), store.get('usdRates'));
+    try { alertsEngine.evaluate(); } catch { /* لا يسقط الدورة */ }
+    try { updatePriceLd(); } catch { /* SEO رفاهية */ }
+  }
+  busy = false;
 }
 
 export function stop() {
-  stopTimer();
-  running = false;
-  visibilityHandlers.forEach(([el, ev, fn]) => el.removeEventListener(ev, fn));
-  visibilityHandlers.length = 0;
-}
-
-/** إعادة محاولة يدوية (زر البانر) */
-export async function force() {
-  return fetchOnce();
+  if (timer) clearInterval(timer);
+  timer = null;
+  unsubPrefs?.();
 }

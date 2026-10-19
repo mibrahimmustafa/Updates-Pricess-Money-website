@@ -1,244 +1,122 @@
 /**
- * ui.js — عناصر مشتركة: toasts، skeleton، بانر الشبكة، شارة مباشر،
- * مكونات تفاعلية (chips، switches، ripple، حقول) بلمسات micro-interaction.
- * كل شيء vanilla DOM بلا مكتبات.
+ * ui.js — أدوات تفاعل مشتركة: منشئ DOM، Toast، عدّاد أرقام متحرك، Ripple، وميض تغيّر السعر.
+ * كل الحركات تحترم prefers-reduced-motion.
  */
 
-import { t } from './i18n.js';
+const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** بناء عنصر بسرعة */
+export function el(tag, attrs = {}, ...children) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'text') n.textContent = v;
+    else if (k === 'html') n.innerHTML = v; // محتوى داخلي موثوق فقط — لا مدخلات مستخدم هنا
+    else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+    else if (k === 'dataset') Object.assign(n.dataset, v);
+    else n.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null) continue;
+    n.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return n;
+}
 
 /* ---------- Toast ---------- */
-export function toast(text, { icon = '🔔', ms = 4200, tone = 'gold' } = {}) {
+export function toast(msg, { kind = 'gold', icon = '', ms = 4500 } = {}) {
   const wrap = document.getElementById('toasts');
   if (!wrap) return;
-  const el = document.createElement('div');
-  el.className = 'toast toast-' + tone;
-  el.innerHTML = `<span class="toast-icon" aria-hidden="true">${icon}</span><span class="toast-text"></span>`;
-  el.querySelector('.toast-text').textContent = text;
-  const btn = document.createElement('button');
-  btn.className = 'toast-close';
-  btn.setAttribute('aria-label', t('a11y.close'));
-  btn.textContent = '✕';
-  btn.addEventListener('click', () => dismiss());
-  el.append(btn);
-  wrap.append(el);
-  requestAnimationFrame(() => el.classList.add('toast-in'));
-  const tm = setTimeout(dismiss, ms);
-  function dismiss() { clearTimeout(tm); el.classList.remove('toast-in'); setTimeout(() => el.remove(), 260); }
-  return dismiss;
+  const node = el('div', { class: `toast kind-${kind}`, role: 'status' });
+  if (icon) node.append(el('span', { class: 'toast-icon', text: icon, 'aria-hidden': 'true' }));
+  node.append(el('span', { text: msg }));
+  wrap.append(node);
+  requestAnimationFrame(() => node.classList.add('in'));
+  setTimeout(() => {
+    node.classList.remove('in');
+    node.classList.add('out');
+    setTimeout(() => node.remove(), 320);
+  }, ms);
 }
 
-/* ---------- Skeleton ---------- */
-export function skeletonBlocks(container, n = 3, klass = 'skel-card') {
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < n; i++) {
-    const d = document.createElement('div');
-    d.className = klass + ' skeleton';
-    d.setAttribute('aria-hidden', 'true');
-    frag.append(d);
+/* ---------- عدّاد أرقام متحرك (Count-up) ---------- */
+/**
+ * يحرّك قيمة نصية من قيمة سابقة إلى الجديدة.
+ * @param {HTMLElement} node عنصر فيه data-v (آخر قيمة رقمية)
+ */
+export function countUp(node, to, { decimals = 2, dur = 650 } = {}) {
+  const from = Number(node.dataset.v ?? NaN);
+  node.dataset.v = String(to);
+  if (reduced() || !Number.isFinite(from) || Math.abs(to - from) < 1e-9) {
+    node.textContent = formatNumberFor(node, to, decimals);
+    return;
   }
-  container.append(frag);
+  const t0 = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+    const v = from + (to - from) * eased;
+    node.textContent = formatNumberFor(node, v, decimals);
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function formatNumberFor(node, v, dec) {
+  // أرقام كبيرة (عملات ضعيفة) بلا منازل؛ صغيرة بدقة أكبر
+  const abs = Math.abs(v);
+  let d = dec, min = 2;
+  if (abs >= 10000) { d = 0; min = 0; }
+  else if (abs < 1) { d = Math.min(6, Math.max(2, dec + 2)); }
+  return new Intl.NumberFormat('en-US', { minimumFractionDigits: min, maximumFractionDigits: d }).format(v);
 }
 
-/* ---------- بانر الشبكة ---------- */
-export function netBanner({ onRetry }) {
-  const b = document.createElement('div');
-  b.className = 'net-banner';
-  b.setAttribute('role', 'alert');
-  b.innerHTML = `
-    <span class="nb-icon" aria-hidden="true">⚠️</span>
-    <span class="nb-text">${t('home.netError')}</span>
-    <span class="nb-sub">${t('live.offline')}</span>
-    <button class="nb-retry" type="button">${t('home.retry')}</button>`;
-  b.querySelector('.nb-retry').addEventListener('click', () => {
-    b.querySelector('.nb-retry').textContent = t('live.retrying');
-    onRetry?.();
-  });
-  return b;
+/* ---------- وميض اتجاه تغيّر السعر ---------- */
+export function flash(node, dirUp) {
+  if (reduced()) return;
+  node.classList.remove('tick-up', 'tick-down');
+  void node.offsetWidth; // إعادة تشغيل الأنيميشن
+  node.classList.add(dirUp ? 'tick-up' : 'tick-down');
+  const clear = () => node.classList.remove('tick-up', 'tick-down');
+  node.addEventListener('animationend', clear, { once: true });
 }
 
-/* ---------- شارة "مباشر" + chip زمن الاستجابة ---------- */
-export function liveBadge() {
-  const el = document.createElement('div');
-  el.className = 'live-badge';
-  el.setAttribute('aria-live', 'polite');
-  el.setAttribute('aria-label', t('a11y.live'));
-  el.innerHTML = `
-    <span class="live-dot" aria-hidden="true"></span>
-    <span class="live-label" data-live="label"></span>
-    <span class="live-chip num" dir="ltr" data-live="latency"></span>`;
-  return el;
-}
+/* ---------- Ripple ---------- */
+document.addEventListener('pointerdown', (e) => {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const host = e.target.closest?.('.rippleable');
+  if (!host) return;
+  const rect = host.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height);
+  const rip = el('span', { class: 'ripple' });
+  rip.style.width = rip.style.height = `${size}px`;
+  rip.style.left = `${e.clientX - rect.left - size / 2}px`;
+  rip.style.top = `${e.clientY - rect.top - size / 2}px`;
+  host.append(rip);
+  setTimeout(() => rip.remove(), 600);
+});
 
-/** تحديث قيم الشارة: (el, ms, online) */
-export function updateLiveBadge(el, ms, online) {
-  if (!el) return;
-  const chip = el.querySelector('[data-live="latency"]');
-  el.classList.toggle('is-offline', !online);
-  el.querySelector('[data-live="label"]').textContent = online ? t('live.badge') : t('live.offline');
-  if (Number.isFinite(ms)) {
-    chip.textContent = ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : Math.round(ms) + 'ms';
-    chip.className = 'live-chip num ' + (ms < 700 ? 'lat-good' : ms < 1600 ? 'lat-warn' : 'lat-bad');
-  } else {
-    chip.textContent = '—';
-    chip.className = 'live-chip num';
-  }
-}
-
-/* ---------- Ripple خفيف للأزرار والبلاطات (يحترم reduced-motion) ---------- */
-export function bindRipples(root = document) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  root.querySelectorAll('.rippled:not([data-rippled])').forEach(el => {
-    el.dataset.rippled = '1';
-    el.addEventListener('pointerdown', e => {
-      const rect = el.getBoundingClientRect();
-      const span = document.createElement('span');
-      span.className = 'ripple';
-      const size = Math.max(rect.width, rect.height) * 2;
-      span.style.width = span.style.height = size + 'px';
-      span.style.left = (e.clientX - rect.left - size / 2) + 'px';
-      span.style.top = (e.clientY - rect.top - size / 2) + 'px';
-      el.append(span);
-      span.addEventListener('animationend', () => span.remove());
-    });
-  });
-}
-
-/* ---------- نسخ إلى الحافظة مع Toast ---------- */
-export async function copyText(text, label) {
-  const show = () => toast(t('home.copied', { t: label || text }), { icon: '📋' });
+/* ---------- نسخ قيمة + توست ---------- */
+export async function copyText(text, successMsg) {
   try {
     await navigator.clipboard.writeText(text);
-    show();
-  } catch {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.append(ta);
-    ta.select();
-    try { document.execCommand('copy'); show(); } catch { /* لا شيء */ }
-    ta.remove();
-  }
+    toast(successMsg, { icon: '✓', kind: 'success', ms: 2200 });
+  } catch { /* الرفض الصامت أفضل من إزعاج المستخدم */ }
 }
 
-/* ---------- select منسق ---------- */
-export function selectEl({ label, options, value, onchange }) {
-  const w = document.createElement('label');
-  w.className = 'field';
-  if (label) {
-    const l = document.createElement('span');
-    l.className = 'field-label';
-    l.textContent = label;
-    w.append(l);
-  }
-  const s = document.createElement('select');
-  s.className = 'field-input';
-  options.forEach(o => {
-    if (o.group) {
-      const g = document.createElement('optgroup');
-      g.label = o.groupLabel || o.group;
-      (o.items || []).forEach(it => g.append(new Option(it.text, it.value, false, it.value === value)));
-      s.append(g);
-    } else {
-      s.append(new Option(o.text, o.value, false, o.value === value));
-    }
-  });
-  if (onchange) s.addEventListener('change', () => onchange(s.value));
-  w.append(s);
-  return w;
-}
-
-/* ---------- حقل رقمي بأسهم +/− (touch 44px ✓) ---------- */
-export function numberInput({ label, value = 0, min = 0, max = 1e12, step = 1, suffix, onInput }) {
-  const w = document.createElement('label');
-  w.className = 'field';
-  if (label) {
-    const l = document.createElement('span');
-    l.className = 'field-label';
-    l.textContent = label;
-    w.append(l);
-  }
-  const box = document.createElement('div');
-  box.className = 'number-box';
-  const dec = document.createElement('button');
-  dec.type = 'button'; dec.className = 'btn-num'; dec.textContent = '−';
-  const inp = document.createElement('input');
-  inp.type = 'number';
-  inp.className = 'field-input num';
-  inp.value = value;
-  inp.min = min; inp.max = max; inp.step = step;
-  inp.setAttribute('inputmode', 'decimal');
-  const inc = document.createElement('button');
-  inc.type = 'button'; inc.className = 'btn-num'; inc.textContent = '+';
-  const clamp = () => Math.min(max, Math.max(min, Number(inp.value) || 0));
-  dec.addEventListener('click', () => { inp.value = clamp() - step < min ? min : clamp() - step; onInput?.(clamp()); });
-  inc.addEventListener('click', () => { inp.value = clamp() + step > max ? max : clamp() + step; onInput?.(clamp()); });
-  inp.addEventListener('input', () => onInput?.(clamp()));
-  box.append(dec, inp, inc);
-  if (suffix) {
-    const s = document.createElement('span');
-    s.className = 'num-suffix';
-    s.textContent = suffix;
-    box.append(s);
-  }
-  w.append(box);
-  return w;
-}
-
-/* ---------- مفتاح متبادل ---------- */
-export function switchEl({ label, checked, onChange }) {
-  const w = document.createElement('label');
-  w.className = 'switch-row';
-  const inp = document.createElement('input');
-  inp.type = 'checkbox';
-  inp.className = 'switch-input visually-hidden-input';
-  inp.checked = !!checked;
-  const sw = document.createElement('span');
-  sw.className = 'switch-ui';
-  sw.setAttribute('aria-hidden', 'true');
-  const txt = document.createElement('span');
-  txt.className = 'switch-text';
-  txt.textContent = label;
-  w.append(inp, sw, txt);
-  inp.addEventListener('change', () => onChange?.(inp.checked));
-  return w;
-}
-
-/* ---------- شرائح قابلة للاختيار ---------- */
-export function chipSet({ items, selected = [], onToggle, extraClass = '' }) {
-  const wrap = document.createElement('div');
-  wrap.className = 'chip-row ' + extraClass;
-  wrap.setAttribute('role', 'group');
-  items.forEach(({ value, text }) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'chip' + (selected.includes(value) ? ' is-on' : '');
-    b.dataset.value = value;
-    b.textContent = text;
-    b.addEventListener('click', () => {
-      const on = b.classList.toggle('is-on');
-      onToggle?.(value, on);
-    });
-    wrap.append(b);
-  });
-  return wrap;
-}
-
-/** شرائح اختيار واحد (segmented control) */
-export function segmented({ options, value, onChange, extraClass = '' }) {
-  const w = document.createElement('div');
-  w.className = 'segmented ' + extraClass;
-  w.setAttribute('role', 'tablist');
-  options.forEach(o => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'segment' + (o.value === value ? ' is-on' : '');
-    b.textContent = o.text;
-    b.setAttribute('role', 'tab');
-    b.addEventListener('click', () => {
-      w.querySelectorAll('.segment').forEach(s => s.classList.remove('is-on'));
-      b.classList.add('is-on');
-      onChange?.(o.value);
-    });
-    w.append(b);
-  });
-  return w;
+/* ---------- دقّة جرس خفيفة عند تفعيل تنبيه (اختيارية) ---------- */
+export function beep() {
+  try {
+    if (!navigator.userActivation?.hasBeenActive) return;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+    o.connect(g).connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.3);
+    setTimeout(() => ctx.close?.(), 500);
+  } catch { /* الصوت رفاهية — لا يكسر شيئاً */ }
 }

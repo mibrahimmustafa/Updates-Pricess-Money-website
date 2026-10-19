@@ -1,165 +1,206 @@
 /**
- * pages/jewelry.js — حاسبة المجوهرات — Phase 5.2
- * مدخلات: وزن/عيار/مصنعية/ضريبة 14% قابلة للإيقاف/مبشَّت بوزنه وعياره يُخصم بسعر السوق.
- * الناتج مفصّل سطراً سطراً — الحساب موحّد عبر karatUsdPerGram + convert.
+ * pages/jewelry.js — حاسبة المجوهرات — Phase 5
+ * مدخلات: وزن / عيار / مصنعية / ضريبة VAT قابلة للإيقاف / مبشَّت (وزن + عيار) يخصم بسعر السوق.
+ * الناتج مفصّل سطراً سطراً بالعملة الافتراضية مع إمكانية التبديل — يعاد حسابه فور أي تغيير.
  */
 
 import { get, subscribe } from '../store.js';
-import { KARATS } from '../pools.js';
-import { formatMoney } from '../format.js';
-import { karatUsdPerGram, convert, sensibleDecimals } from '../money.js';
+import { CURRENCY_MAP, flagEmoji, pricePerGramUSD, KARATS } from '../pools.js';
+import { convert } from '../money.js';
+import { formatMoney, iso } from '../format.js';
 import { t } from '../i18n.js';
-import * as ui from '../ui.js';
-import { curName, curFlag, curSymbol } from '../names.js';
+import { el, toast } from '../ui.js';
+import { refresh } from '../polling.js';
+
+let state = {
+  weight: 10, karat: '21K', making: 60, vat: true,
+  cur: null,                 // null → displayCurrency
+  old: { on: false, weight: 5, karat: '21K' },
+};
+
+let bpEls = {}; // بنود التفصيل الموضعية
 
 export function renderJewelry(container) {
-  const el = document.createElement('section');
-  el.className = 'page';
-  el.innerHTML = `
-    <h1 class="page-title">${t('jew.title')}</h1>
-    <div class="jew-form card">
-      <div data-slot="weight"></div>
-      <div data-slot="karat"></div>
-      <div data-slot="work"></div>
-      <div data-slot="currency"></div>
-    </div>
-    <div class="card">
-      <div data-slot="vat"></div>
-      <div class="buyback-block" data-slot="buybackBlock">
-        <div class="jew-subtitle" style="padding-block:8px 4px">${t('jew.buyback')}</div>
-        <div class="jew-form">
-          <div data-slot="bbWeight"></div>
-          <div data-slot="bbKarat"></div>
-        </div>
-      </div>
-    </div>
-    <div class="card">
-      <h2 class="section-title">${t('jew.total')}</h2>
-      <div class="jew-lines" data-slot="lines"></div>
-      <div class="jew-total"><span class="field-label" style="font-size:14px">${t('jew.total')}</span><span class="jt-val" data-slot="total">—</span></div>
-      <p class="empty-note" data-slot="wait">${t('jew.wait')}</p>
-    </div>`;
+  state.cur = get('displayCurrency');
 
-  container.append(el);
-  ui.bindRipples(el);
+  const page = el('section', { class: 'page jewelry' });
 
-  /* الحالة: تُحفظ موضعياً (وحدة الجلسة) */
-  const S = {
-    weight: 10,
-    karat: '21K',
-    work: 60,          // مصنعية لكل جرام (ببالعملة)
-    currency: get('displayCurrency') || 'EGP',
-    vat: true,
-    buyback: false,
-    bbWeight: 10,
-    bbKarat: '18K',
+  // ============ بطاقة المدخلات ============
+  const card = el('div', { class: 'card jw-card' });
+  card.append(el('h1', { class: 'page-title', text: t('jw.title') }));
+
+  // الوزن
+  const weight = numInput(state.weight, v => { state.weight = clamp(v, 0, 100000); calc(); });
+  // المصنعية
+  const making = numInput(state.making, v => { state.making = clamp(v, 0, 100000); calc(); });
+  // العيار — segmented chips
+  const karatSeg = karatChips(state.karat, k => { state.karat = k; calc(); });
+  // ضريبة — switch
+  const vatSwitch = switchInput(state.vat, on => { state.vat = on; calc(); });
+  // العملة
+  const curSel = currencySelect(v => { state.cur = v; calc(); });
+
+  // المبشَّت
+  const oldOn = switchInput(state.old.on, on => { state.old.on = on; oldBox.classList.toggle('enabled', on); calc(); });
+  const oldWeight = numInput(state.old.weight, v => { state.old.weight = clamp(v, 0, 100000); calc(); });
+  const oldKarat = karatChips(state.old.karat, k => { state.old.karat = k; calc(); }, true);
+
+  const oldBox = el('div', { class: `jw-old${state.old.on ? ' enabled' : ''}` },
+    el('div', { class: 'jw-old-head' },
+      el('span', { class: 'label strong', text: t('jw.old') }),
+      oldOn,
+    ),
+    el('p', { class: 'hint', text: t('jw.oldHint') }),
+    el('div', { class: 'two-col' }, field(t('jw.oldWeight'), oldWeight), field(t('jw.oldKarat'), oldKarat)),
+  );
+
+  card.append(
+    el('h2', { class: 'sec-title', text: t('jw.inputs') }),
+    el('div', { class: 'two-col' }, field(t('jw.weight', {}), weight), field(t('jw.making'), making)),
+    field(t('jw.karat'), karatSeg),
+    el('div', { class: 'two-col' },
+      field(t('jw.vat'), vatSwitch),
+      field(t('jw.currency'), curSel),
+    ),
+    oldBox,
+    el('p', { class: 'hint', text: t('jw.note') }),
+  );
+
+  // ============ بطاقة الناتج ============
+  const res = el('div', { class: 'card jw-result' });
+  res.append(el('h2', { class: 'sec-title', text: t('jw.breakdown') }));
+  bpEls = {};
+  const mkRow = (key, labelKey, cls = '') => {
+    const r = el('div', { class: `bp-row ${cls}` },
+      el('span', { class: 'bp-label', text: t(labelKey), 'data-i18n': labelKey }),
+      el('span', { class: 'bp-val num', id: `bp-${key}` }, '—'),
+    );
+    bpEls[key] = r.querySelector('.bp-val');
+    return r;
+  };
+  res.append(
+    mkRow('gram', 'jw.gramPrice'),
+    mkRow('metal', 'jw.metal'),
+    mkRow('making', 'jw.makingLine'),
+    mkRow('vat', 'jw.vatLine'),
+    mkRow('old', 'jw.oldLine', 'negative'),
+  );
+  const totalSpan = el('span', { class: 'bp-val num gold bp-total', id: 'bp-total' }, '—');
+  bpEls.total = totalSpan;
+  res.append(el('div', { class: 'bp-total-row' },
+    el('span', { class: 'bp-label', text: t('jw.total'), 'data-i18n': 'jw.total' }),
+    totalSpan,
+  ));
+
+  page.append(card, res);
+  container.append(page);
+  calc();
+
+  const unsub = subscribe((changed) => {
+    if (changed.some(k => ['prices', 'usdRates'].includes(k))) calc();
+  });
+  return () => { unsub(); page.remove(); bpEls = {}; };
+}
+
+/* ---------- الحساب ---------- */
+function calc() {
+  if (!bpEls.gram) return;
+  const sym = (CURRENCY_MAP.get(state.cur) || {}).symbol || state.cur;
+  const prices = get('prices');
+  const gUSD = pricePerGramUSD('XAU', prices.XAU?.usd);
+  const setRow = (key, v, prefix = '') => {
+    const node = bpEls[key];
+    if (!node) return;
+    if (!Number.isFinite(v)) { node.textContent = '—'; node.dataset.v = ''; return; }
+    node.textContent = `${prefix}${iso(formatMoney(v))} ${sym}`;
+    node.dataset.v = String(v);
   };
 
-  const slots = {
-    weight: el.querySelector('[data-slot=weight]'),
-    karat: el.querySelector('[data-slot=karat]'),
-    work: el.querySelector('[data-slot=work]'),
-    currency: el.querySelector('[data-slot=currency]'),
-    vat: el.querySelector('[data-slot=vat]'),
-    buybackBlock: el.querySelector('[data-slot=buybackBlock]'),
-    bbWeight: el.querySelector('[data-slot=bbWeight]'),
-    bbKarat: el.querySelector('[data-slot=bbKarat]'),
-    lines: el.querySelector('[data-slot=lines]'),
-    total: el.querySelector('[data-slot=total]'),
-    wait: el.querySelector('[data-slot=wait]'),
-  };
+  if (!Number.isFinite(gUSD)) {
+    for (const k of ['gram', 'metal', 'making', 'vat', 'old', 'total']) setRow(k, NaN);
+  } else {
+    const gramCur = convert(gUSD, 'USD', state.cur);
+    const payingPurity = KARATS[state.karat] ?? 1;
+    const metal = gramCur * state.weight * payingPurity;
+    const making = state.making * state.weight;
+    const vat = state.vat ? (metal + making) * 0.14 : 0;
+    const oldPurity = KARATS[state.old.karat] ?? 1;
+    const oldVal = state.old.on ? gramCur * state.old.weight * oldPurity : 0;
+    const total = metal + making + vat - oldVal;
 
-  slots.weight.append(ui.numberInput({
-    label: t('jew.weight'), value: S.weight, min: 0.1, step: 1,
-    suffix: 'g',
-    onInput: v => { S.weight = v || S.weight; calc(); },
-  }));
-
-  slots.karat.append(ui.segmented({
-    value: S.karat,
-    options: Object.keys(KARATS).map(k => ({ value: k, text: k })),
-    onChange: v => { S.karat = v; calc(); },
-  }));
-
-  slots.work.append(ui.numberInput({
-    label: t('jew.workmanship'), value: S.work, min: 0, step: 10,
-    suffix: curSymbol(S.currency),
-    onInput: v => { S.work = v || S.work; calc(); },
-  }));
-
-  function currencySelect() {
-    slots.currency.replaceChildren(ui.selectEl({
-      label: t('jew.currency'),
-      value: S.currency,
-      options: (get('currencies') || []).map(c => ({ value: c, text: `${curFlag(c)} ${curName(c)}` })),
-      onchange: v => { S.currency = v; slots.work.querySelector('.num-suffix').textContent = curSymbol(v); calc(); },
-    }));
+    setRow('gram', gramCur);
+    setRow('metal', metal);
+    setRow('making', making);
+    setRow('vat', vat);
+    setRow('old', oldVal, '− ');
+    setRow('total', Math.max(0, total));
   }
-  currencySelect();
+}
 
-  const vatSwitch = ui.switchEl({
-    label: t('jew.vat'), checked: S.vat,
-    onChange: v => { S.vat = v; calc(); },
+/* ---------- عناصر إدخال مشتركة ---------- */
+function numInput(value, onchange) {
+  const inp = el('input', {
+    class: 'input num', type: 'number', inputmode: 'decimal', min: '0', step: 'any', value: String(value),
   });
-  slots.vat.append(vatSwitch);
-
-  const bbSwitch = ui.switchEl({
-    label: t('jew.buyback.on'), checked: S.buyback,
-    onChange: v => { S.buyback = v; slots.buybackBlock.hidden = !v; calc(); },
+  inp.addEventListener('input', () => onchange(parseFloat(inp.value)));
+  return inp;
+}
+function clamp(v, min, max) {
+  v = Number(v);
+  if (!Number.isFinite(v)) return min;
+  return Math.min(max, Math.max(min, v));
+}
+function switchInput(checked, onchange) {
+  const lab = el('label', { class: 'switch' });
+  const inp = el('input', { type: 'checkbox' });
+  inp.checked = !!checked;
+  inp.addEventListener('change', () => onchange(inp.checked));
+  lab.append(inp, el('span', { class: 'slider', 'aria-hidden': 'true' }));
+  lab.setAttribute('role', 'switch');
+  function sync() { lab.setAttribute('aria-checked', String(inp.checked)); }
+  inp.addEventListener('change', sync);
+  sync();
+  return lab;
+}
+function karatChips(current, onPick, small = false) {
+  const wrap = el('div', { class: `chips karat-chips${small ? ' small' : ''}`, role: 'group' });
+  const sync = () => wrap.querySelectorAll('.chip').forEach(c => {
+    const active = c.dataset.k === current;
+    c.classList.toggle('active', active);
+    c.setAttribute('aria-pressed', String(active));
   });
-  slots.buybackBlock.prepend(bbSwitch);
-
-  const bbWeightInput = ui.numberInput({
-    label: t('jew.buyback.weight'), value: S.bbWeight, min: 0, step: 1, suffix: 'g',
-    onInput: v => { S.bbWeight = v || S.bbWeight; calc(); },
-  });
-  slots.bbWeight.append(bbWeightInput);
-
-  const bbKaratSeg = () => {
-    slots.bbKarat.replaceChildren(ui.segmented({
-      value: S.bbKarat,
-      options: Object.keys(KARATS).map(k => ({ value: k, text: k })),
-      onChange: v => { S.bbKarat = v; calc(); },
-    }));
-  };
-  bbKaratSeg();
-
-  /* ---- الحساب سطراً سطراً ---- */
-  function calc() {
-    const ug = karatUsdPerGram(S.karat); // دولار لكل جرام بالعيار
-    const rates = get('usdRates') || {};
-    const cur = S.currency;
-    const rate = ug != null ? convert(1, 'USD', cur) : null;
-    if (ug == null || rate == null) { waitSlot.hidden = false; slots.total.textContent = '—'; slots.lines.replaceChildren(); return; }
-    waitSlot.hidden = true;
-
-    const metalV = ug * S.weight * rate;
-    const workV = S.work * S.weight;
-    const vatV = S.vat ? 0.14 * (metalV + workV) : 0;
-    const bbUg = karatUsdPerGram(S.bbKarat);
-    const bbV = S.buyback && bbUg != null ? bbUg * S.bbWeight * rate : 0;
-    const grandV = metalV + workV + vatV - bbV;
-
-    const fmt = v => formatMoney(Math.abs(v) < 1e-12 ? 0 : v, { decimals: sensibleDecimals(v) });
-    const sym = curSymbol(cur);
-    const row = (label, val, cls = '') => `
-      <div class="jew-line"><span class="jl-label">${label}</span>
-        <span class="jl-val num ${cls}" dir="ltr">${fmt(val)} <span style="color:var(--text-faint)">${sym}</span></span></div>`;
-
-    slots.lines.innerHTML = [
-      row(t('jew.line.metal'), metalV),
-      row(t('jew.line.work'), workV),
-      S.vat ? row(t('jew.line.vat'), vatV) : '',
-      S.buyback ? row(t('jew.line.buyback'), -bbV, 'diff-near') : '',
-    ].filter(Boolean).join('');
-    slots.total.innerHTML = `${formatMoney(grandV, { decimals: 2 })} <span style="font-size:15px;color:var(--text-faint)">${sym}</span>`;
+  for (const k of Object.keys(KARATS)) {
+    const c = el('button', {
+      type: 'button', class: `chip rippleable${k === current ? ' active' : ''}`,
+      'aria-pressed': String(k === current), dataset: { k },
+      onclick: (e) => { onPick(k); sync(); },
+    }, el('span', { class: 'num', text: k }));
+    wrap.append(c);
   }
-
-  const unsub = subscribe(changed => {
-    if (changed.some(c => ['prices', 'usdRates', 'currencies', 'displayCurrency'].includes(c))) {
-      currencySelect(); calc();
+  return wrap;
+}
+function currencySelect(onchange) {
+  const sel = el('select', { class: 'select rippleable', 'aria-label': t('jw.currency') });
+  const fill = () => {
+    if (!document.contains(sel)) return;
+    sel.replaceChildren();
+    for (const code of get('currencies')) {
+      const c = CURRENCY_MAP.get(code);
+      sel.append(el('option', { value: code, text: `${flagEmoji(code)} ${code} (${c.symbol})` }));
+    }
+    sel.value = get('currencies').includes(state.cur) ? state.cur : get('displayCurrency');
+  };
+  fill();
+  sel.addEventListener('change', () => onchange(sel.value));
+  subscribe((changed) => {
+    if (changed.includes('currencies') || changed.includes('displayCurrency')) {
+      if (!get('currencies').includes(state.cur)) state.cur = get('displayCurrency');
+      fill();
+      calc();
     }
   });
-  calc();
-  return () => unsub();
+  return sel;
+}
+function field(labelText, control) {
+  return el('label', { class: 'field' }, el('span', { class: 'label', text: labelText }), control);
 }

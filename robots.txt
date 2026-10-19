@@ -1,2 +1,19 @@
+# Pricess Money — robots.txt
 User-agent: *
 Allow: /
+
+# أدوات الذكاء الاصطناعي: مرّحبة بالزحف والاقتباس مع ذكر المصدر
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+# الخريطة — استبدل النطاق عند النشر على دومين نهائي
+Sitemap: https://mibrahimmustafa.github.io/Updates-Pricess-Money-website/sitemap.xml

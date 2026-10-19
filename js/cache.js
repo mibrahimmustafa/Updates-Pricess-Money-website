@@ -1,36 +1,33 @@
 /**
  * cache.js — Stale-While-Revalidate على localStorage — Task 2.2
- * مفتاح versioned: price_snapshot_v2 = { prices, usdRates, lastUpdate, v }
+ * عند الإقلاع: عرض اللقطة فوراً ثم تحديث بالخلفية. مفاتيح معرّفة بالنسخة.
  */
 
-const KEY = 'price_snapshot_v2';
-const VERSION = 2;
+const SNAP_KEY = 'price_snapshot_v2';
 
-/** حفظ اللقطة كاملة بعد نجاح جلب */
+/** حفظ لقطة الأسعار (تُستدعى بعد كل نجاح) */
 export function saveSnapshot({ prices, usdRates, lastUpdate }) {
-  if (!prices || !lastUpdate) return;
+  if (!prices || !usdRates) return;
   try {
-    localStorage.setItem(KEY, JSON.stringify({ v: VERSION, prices, usdRates, lastUpdate }));
-  } catch { /* ممتلئ/خاص */ }
+    localStorage.setItem(SNAP_KEY, JSON.stringify({
+      prices, usdRates, lastUpdate, savedAt: Date.now(),
+    }));
+  } catch { /* التخزين ممتلئ/ممنوع — الكاش رفاهية */ }
 }
 
-/** آخر لقطة صالحة أو null (يتحقق من النسخة) */
-export function loadSnapshot() {
+/** قراءة اللقطة أو null (مع تنظيف تلقائي للتالف) */
+export function getSnapshot() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(SNAP_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw);
-    if (!s || s.v !== VERSION || !s.prices) return null;
+    if (!s?.prices || !s?.usdRates) return null;
     return s;
   } catch { return null; }
 }
 
-/** سجّل اللقطة في store فوراً عند الإقلاع (عرض فوري قبل الشبكة) */
-export function applySnapshotToStore(store) {
-  const s = loadSnapshot();
-  if (!s) return false;
-  const patch = { prices: s.prices, lastUpdate: s.lastUpdate };
-  if (s.usdRates && Object.keys(s.usdRates).length) patch.usdRates = s.usdRates;
-  store.set(patch);
-  return true;
+/** عمر اللقطة بالميلي ثانية (لرسالة "منذ X") */
+export function snapshotAge() {
+  const s = getSnapshot();
+  return s ? Date.now() - (s.savedAt || s.lastUpdate || 0) : Infinity;
 }
