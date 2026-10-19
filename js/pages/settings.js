@@ -17,6 +17,8 @@ export function renderSettings(container) {
   root = el('section', { class: 'page settings' });
 
   root.append(
+    // عنوان الصفحة — كانت الشاشة الوحيدة بلا h1 (تسلسل عناوين سليم للوصولية)
+    el('h1', { class: 'page-title', text: t('settings.title'), 'data-i18n': 'settings.title' }),
     sectionLang(),
     sectionTheme(),
     sectionDisplayCurrency(),
@@ -28,6 +30,7 @@ export function renderSettings(container) {
   const reBuild = () => {
     root.replaceChildren();
     root.append(
+      el('h1', { class: 'page-title', text: t('settings.title'), 'data-i18n': 'settings.title' }),
       sectionLang(),
       sectionTheme(),
       sectionDisplayCurrency(),
