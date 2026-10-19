@@ -1,0 +1,25 @@
+name: Deploy to Hostinger via SFTP
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Upload files via SFTP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME  }}
+          password: ${{ secrets.FTP_PASSWORD  }}
+          port: ${{ secrets.FTP_PORT }}
+          source: "."
+          target: "/home/u627514535/domains/coral-stingray-393774.hostingersite.com/public_html/"
+          rm: false
