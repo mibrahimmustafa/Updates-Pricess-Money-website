@@ -43,6 +43,9 @@ h1, h2, h3, p { margin: 0; }
   clip: rect(0 0 0 0); overflow: hidden; white-space: nowrap;
 }
 
+/* الحالة hidden تفوق أي display صريح — بدونها البانر كان يظهر دائماً رغم [hidden] */
+[hidden] { display: none !important; }
+
 .skip-link {
   position: fixed;
   inset-block-start: var(--sp-2);

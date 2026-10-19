@@ -253,11 +253,11 @@
   overflow-x: auto;
   scroll-snap-type: x proximity;
   padding: var(--sp-1) 2px var(--sp-3);
-  scrollbar-width: thin;
-  scrollbar-color: var(--gold-deep) transparent;
+  /* لا سكرول بار أفقي ثابت — قابلية السحب معنية عبر نبوءة tile قاطع الحافة + snap */
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
 }
-.fx-strip::-webkit-scrollbar { height: 5px; }
-.fx-strip::-webkit-scrollbar-thumb { background: var(--gold-deep); border-radius: 99px; }
+.fx-strip::-webkit-scrollbar { display: none; }
 .fx-tile {
   scroll-snap-align: start;
   flex: 0 0 auto;
@@ -469,8 +469,19 @@
   transition: width var(--dur-slow) var(--ease);
 }
 
-/* Toasts — حركة دخول/خروج */
-.toast-wrap { display: grid; justify-items: center; gap: var(--sp-2); z-index: 300; }
+/* Toasts — حركة دخول/خروج — حجم ثابت فوق المحتوى (كما كان يزاحف التنسيق) */
+.toast-wrap {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-2);
+  z-index: 300;
+  position: fixed;
+  inset-block-end: calc(var(--navbar-h) + var(--sp-6) + var(--navbar-safe, 0px));
+  inset-inline: 0;
+  pointer-events: none;
+}
+@media (min-width: 1024px) { .toast-wrap { inset-block-end: var(--sp-6); } }
+.toast, .toast * { pointer-events: auto; }
 .toast {
   transform: translateY(14px);
   opacity: 0;

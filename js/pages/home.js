@@ -71,7 +71,12 @@ export function renderHome(container) {
 
 /* ============ البناء الهيكلي (يتغير فقط عند تغيّر قوائم العرض) ============ */
 function sigOf() {
-  return JSON.stringify([get('currencies'), get('metals')]);
+  return JSON.stringify([get('currencies'), get('metals'), get('lang')]);
+}
+
+/** العربي/الإنجليزي حسب اللغة الحالية — بلا أسماء عربية ثابتة في واجهة إنجليزية */
+function locName(entry) {
+  return get('lang') === 'en' ? entry.en : entry.ar;
 }
 
 function skeletonHTML() {
@@ -131,7 +136,7 @@ function buildStructure(root) {
       <header class="mc-head">
         <span class="mc-icon" aria-hidden="true">${a.icon}</span>
         <div class="mc-name">
-          <h3>${a.ar} <small class="num">${code}</small></h3>
+          <h3>${locName(a)} <small class="num">${code}</small></h3>
         </div>
         <div class="mc-oz">
           <span class="mc-oz-val num" data-vid="oz:${code}">—</span>
@@ -157,10 +162,10 @@ function buildStructure(root) {
       row.type = 'button';
       row.className = 'g-row';
       row.setAttribute('role', 'row');
-      row.setAttribute('aria-label', `${a.en} ${t(rowLabel)} ${formatMoney(0)} ${cc.symbol} — ${t('ui.copied')}`);
+      row.setAttribute('aria-label', `${locName(a)} ${t(rowLabel)} ${formatMoney(0)} ${cc.symbol} — ${t('ui.copied')}`);
       row.innerHTML = `
         <span class="g-cur num">${flagEmoji(cur)} ${cur}</span>
-        <span class="g-name text-dim">${cc.ar}</span>
+        <span class="g-name text-dim">${locName(cc)}</span>
         <span class="g-val num" data-vid="${rowKey(code, cur)}">—</span>`;
       row.addEventListener('click', () => {
         const v = row.querySelector('.g-val')?.dataset.copiedVal || '';
