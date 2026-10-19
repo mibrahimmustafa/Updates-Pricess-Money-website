@@ -1,25 +1,54 @@
-name: Deploy to Hostinger via SFTP
+# Deploy to Hostinger — تحديث تلقائي للاستضافة مع كل دخول إلى master
+# ─────────────────────────────────────────────────────────────────────────
+# ما إن تعمل `git push`، يستلم GitHub الشفرة ويرفعها FTP إلى Hostinger —
+# لا رفع يدوي مطلقاً بعد اليوم.
+#
+# إعداد لمرة واحدة (دقيقتان):
+#   1) من hPanel:_emails → FTP Accounts (أو Files → FTP Accounts) خُذ:
+#        - المضيف        مثل: ftp://XX.XX.XX.XX  أو  ftp.uXXXXXXXX.hostingersite.com
+#        - اسم المستخدم  مثل: u123456789.default
+#        - كلمة المرور
+#   2) على GitHub: Settings → Secrets and variables → Actions → New repository secret:
+#        FTP_HOST  = المضيف (بدون بادئة ftp://)
+#        FTP_USER  = اسم المستخدم
+#        FTP_PASS  = كلمة المرور
+#   3) شغّل المرة الأولى يدوياً من تبويب Actions (Run workflow) أو ادفع commit جديداً.
+#
+# ملاحظة: FTP_PORT اختياري (21 افتراضياً).
+
+name: Deploy to Hostinger
 
 on:
   push:
-    branches:
-      - master
+    branches: [master]
+  workflow_dispatch: {} # زر تشغيل يدوي من تبويب Actions
+
+concurrency:
+  group: deploy-hostinger
+  cancel-in-progress: true # رفع جديد يلغي أي رفع قديم متعثر
 
 jobs:
-  deploy:
+  ftp-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Upload files via SFTP
-        uses: appleboy/scp-action@v0.1.7
+      - name: Upload site files (FTP)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          host: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME  }}
-          password: ${{ secrets.FTP_PASSWORD  }}
-          port: ${{ secrets.FTP_PORT }}
-          source: "."
-          target: "/home/u627514535/domains/coral-stingray-393774.hostingersite.com/public_html/"
-          rm: false
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
+          # مجلد جذر الموقع على Hostinger (عدّله إن كان مختلفاً):
+          server-dir: ./
+          # ملفات مستثناة من النشر (أدوات تطوير/توثيق فقط):
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/devserver.py
+            **/README.md
+            **/Pricess-Money-Web-Prompts-Html-Css-JS.md
+            **/architecture.json
+            **/arctecture.json
+            **/.github/**
