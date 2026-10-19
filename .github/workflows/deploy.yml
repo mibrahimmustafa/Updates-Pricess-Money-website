@@ -1,14 +1,12 @@
 # Deploy to Hostinger — تحديث تلقائي للاستضافة مع كل دخول إلى master
 # ─────────────────────────────────────────────────────────────────────────
-# ما إن تعمل `git push`، يرفع GitHub الشفرة تلقائياً FTP إلى Hostinger.
+# النقل عبر SFTP (مضمون موجود عند Hostinger) على بورت مخصص.
 #
 # الأسرار المطلوبة (Repository secrets):
-#   FTP_SERVER    = المضيف بدون ftp:// — في الاستضافة المجانية عادةً IP من hPanel
-#                   (مثل 145.14.151.65) أو ftp.xxx.hostingsite.com
-#   FTP_USERNAME  = اسم مستخدم FTP (مثل u123456789.default)
-#   FTP_PASSWORD  = كلمة مرور FTP
-#   FTP_PORT      = البورت من hPanel (SFTP على بورت مختلف عن 22 عندك)
-#   FTP_PROTOCOL  = اختياري — sftp | ftps | ftp (افتراضي sftp)
+#   FTP_SERVER    = المضيف بدون ftp://
+#   FTP_USERNAME  = اسم مستخدم SFTP
+#   FTP_PASSWORD  = كلمة مرور SFTP
+#   FTP_PORT      = بورت SFTP من hPanel (مختلف عن 22 في الاستضافة الحالية)
 
 name: Deploy to Hostinger
 
@@ -22,49 +20,49 @@ concurrency:
   cancel-in-progress: true # رفع جديد يلغي أي رفع قديم متعثر
 
 jobs:
-  ftp-deploy:
+  sftp-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # فحص الأسرار مسبقاً — فشل ودّي بإرشادات بدل خطأ غامض من الـaction
+      # فحص الأسرار مسبقاً — فشل ودّي بإرشادات بدل خطأ غامض
       - name: Check FTP secrets
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT }}
         run: |
           missing=""
           [ -z "$FTP_SERVER" ]   && missing="$missing FTP_SERVER"
           [ -z "$FTP_USERNAME" ] && missing="$missing FTP_USERNAME"
           [ -z "$FTP_PASSWORD" ] && missing="$missing FTP_PASSWORD"
+          [ -z "$FTP_PORT" ]     && missing="$missing FTP_PORT"
           if [ -n "$missing" ]; then
             echo "❌ Missing repository secrets:$missing"
             echo ""
-            echo "أضفها من: GitHub_repo → Settings → Secrets and variables → Actions → New repository secret"
+            echo "أضفها من: GitHub_repo → Settings → Secrets and variables → Actions"
             exit 1
           fi
-          echo "✅ All FTP secrets present"
+          echo "✅ All secrets present"
+
+      # تجريد ملفات التطوير/التوثيق من النسخة الراقلة للاستضافة
+      - name: Strip dev-only files
+        run: |
+          rm -f devserver.py README.md architecture.json arctecture.json \
+                Pricess-Money-Web-Prompts-Html-Css-JS.md
+          rm -rf .github
+          echo "stripped:"; ls
 
       - name: Upload site files (SFTP)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: wlixcc/SFTP-Deploy-Action@v1.5.1
         with:
-          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT }}                       # بورت SFTP من hPanel (ليس 22)
-          protocol: ${{ secrets.FTP_PROTOCOL || 'sftp' }}     # النقل عبر SFTP كما يسمح به السيرفر
-          timeout: 120000
-          # مجلد جذر الموقع على Hostinger (عدّله إن كان نزل في مكان غلط):
-          server-dir: ./
-          # ملفات مستثناة من النشر (أدوات تطوير/توثيق فقط):
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/devserver.py
-            **/README.md
-            **/Pricess-Money-Web-Prompts-Html-Css-JS.md
-            **/architecture.json
-            **/arctecture.json
-            **/.github/**
+          server: ${{ secrets.FTP_SERVER }}
+          port: ${{ secrets.FTP_PORT }}          # بورت SFTP المخصص
+          ssh_password: ${{ secrets.FTP_PASSWORD }}
+          local_path: './'
+          remote_path: './'                      # جذر موقعك على الاستضافة — عدّله لو نزل الملفات في مكان غلط
+          sftp_only: true                        # فرض وضع SFTP الصافي (بلا محاولات SSH تفاعلية)
+          args: '-o ConnectTimeout=30 -o StrictHostKeyChecking=no'
