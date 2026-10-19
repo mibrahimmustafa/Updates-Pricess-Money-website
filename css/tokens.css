@@ -1,0 +1,79 @@
+/**
+ * tokens.css — Design Tokens — Task 1.1
+ * هوية "ذهبي داكن فاخر": ذهبي #D4A548، 3 ثيمات (dark افتراضي / light / system على html[data-theme]).
+ * القيم هنا هي الأصل؛ لا تكرار ألوان في ملفات CSS أخرى.
+ */
+
+:root {
+  /* ---------- الألوان ---------- */
+  --gold: #D4A548;
+  --gold-strong: #E8C368;
+  --gold-soft: #F3DC9B;
+  --gold-deep: #A87C2A;
+
+  --success: #35C482;
+  --warning: #F0A93B;
+  --danger: #E5484D;
+
+  /* ---------- الخطوط ---------- */
+  --font-ar: 'Cairo', 'Tajawal', system-ui, sans-serif;
+  --font-ar-2: 'Tajawal', 'Cairo', system-ui, sans-serif;
+  --font-latin: 'Inter', 'Cairo', sans-serif;
+
+  /* ---------- التباعد: شبكة 4px ---------- */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* ---------- الزوايا ---------- */
+  --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --r-xl: 24px; --r-full: 999px;
+
+  /* ---------- الظلال ---------- */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.25);
+  --shadow-md: 0 4px 14px rgba(0,0,0,.28);
+  --shadow-gold: 0 0 0 1px rgba(212,165,72,.35), 0 6px 20px rgba(212,165,72,.10);
+
+  /* ---------- الحجم ---------- */
+  --topbar-h: 56px;
+  --navbar-h: 64px;
+  --sidebar-w: 260px;
+  --content-max: 860px;
+
+  /* ---------- الحركة ---------- */
+  --dur-fast: 120ms; --dur: 220ms; --dur-slow: 380ms;
+  --ease: cubic-bezier(.4, 0, .2, 1);
+}
+
+/* ---------- ثيم فاتح ---------- */
+[data-theme="light"] {
+  --bg: #F7F3EA;
+  --bg-2: #EFE8D8;
+  --surface: #FFFFFF;
+  --surface-2: #F4EEE0;
+  --text: #24200F;
+  --text-dim: #6E6552;
+  --text-faint: #9A8F76;
+  --border: rgba(24, 18, 2, .14);
+  --border-strong: rgba(24, 18, 2, .30);
+  --gold-dim: rgba(168, 124, 42, .12);
+  --topbar-bg: rgba(247, 243, 234, .85);
+  --nav-bg: #FFFFFF;
+  --overlay: rgba(24, 18, 2, .4);
+}
+
+/* ---------- ثيم داكن (الافتراضي) ---------- */
+[data-theme="dark"], :root:not([data-theme]) {
+  --bg: #12100C;
+  --bg-2: #17140E;
+  --surface: #1C1810;
+  --surface-2: #241F15;
+  --text: #F3EDE0;
+  --text-dim: #B8AE97;
+  --text-faint: #857C67;
+  --border: rgba(212, 165, 72, .18);
+  --border-strong: rgba(212, 165, 72, .38);
+  --gold-dim: rgba(212, 165, 72, .10);
+  --topbar-bg: rgba(18, 16, 12, .82);
+  --nav-bg: #17140E;
+  --overlay: rgba(0, 0, 0, .55);
+}
