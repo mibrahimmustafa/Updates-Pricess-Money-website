@@ -150,6 +150,10 @@ export const MESSAGES = {
     'ch.nodata': 'لا توجد نقاط تاريخية كافية بعد',
     'ch.nodataHint': 'سنعود بالبيانات بعد بضع دقائق من التشغيل، أو جرّب عملة (سجلها متاح تاريخياً)',
     'ch.points': 'نقطة',
+    'ch.span': 'التغطية',
+    'ch.spanM': 'دقيقة',
+    'ch.spanH': 'ساعة',
+    'ch.spanD': 'يوم',
 
     /* آلة الزمن */
     'tm.title': 'آلة الزمن',
@@ -338,6 +342,10 @@ export const MESSAGES = {
     'ch.nodata': 'Not enough historical points yet',
     'ch.nodataHint': 'Data accumulates after a few minutes of use — or try a currency (history available)',
     'ch.points': 'points',
+    'ch.span': 'Span',
+    'ch.spanM': 'min',
+    'ch.spanH': 'h',
+    'ch.spanD': 'd',
 
     'tm.title': 'Time Machine',
     'tm.subtitle': 'Value of {w}g of {k} gold: 2015 vs today',

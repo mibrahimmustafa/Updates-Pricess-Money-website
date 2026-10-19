@@ -187,14 +187,16 @@ function draw(points, svgBox, tip) {
     lbl.textContent = fmtSmart(v);
     svg.append(lbl);
   }
-  // تسميات التاريخ x
+  // تسميات التاريخ x — لو التغطية داخل يوم واحد نجيب HH:MM (وإلا MM/DD)
+  const spanMs = sampled[sampled.length - 1].t - sampled[0].t;
+  const labelFor = spanMs < 36 * 3600e3 ? shortTime : shortDate;
   const idxs = [0, Math.floor((sampled.length - 1) / 3), Math.floor(((sampled.length - 1) * 2) / 3), sampled.length - 1];
   [...new Set(idxs)].forEach(i => {
     const lbl = document.createElementNS(ns, 'text');
     lbl.setAttribute('x', x(i)); lbl.setAttribute('y', H - 10);
     lbl.setAttribute('text-anchor', i === 0 ? 'start' : i === sampled.length - 1 ? 'end' : 'middle');
     lbl.setAttribute('class', 'ch-tick num');
-    lbl.textContent = shortDate(sampled[i].t);
+    lbl.textContent = labelFor(sampled[i].t);
     svg.append(lbl);
   });
 
@@ -275,7 +277,7 @@ function draw(points, svgBox, tip) {
     hDot.setAttribute('cx', x(i)); hDot.setAttribute('cy', y(p.v));
     hDot.style.opacity = '1';
     tip.hidden = false;
-    tip.innerHTML = `${iso(shortDate(p.t))} · ${iso(fmtSmart(p.v))}`;
+    tip.innerHTML = `${iso(labelFor(p.t))} · ${iso(fmtSmart(p.v))}`;
     // موقع التلميح نسبةً إلى الحاوية
     const boxRect = svgBox.getBoundingClientRect();
     const svgRect = svg.getBoundingClientRect();
@@ -285,7 +287,7 @@ function draw(points, svgBox, tip) {
   }
   function tipText(i) {
     const p = sampled[i];
-    return `${shortDate(p.t)} — ${fmtSmart(p.v)} ${ctrl.cur}`;
+    return `${labelFor(p.t)} — ${fmtSmart(p.v)} ${ctrl.cur}`;
   }
   function chartAria(pts, ch) {
     const a = ASSET_MAP.get(ctrl.asset) || { en: ctrl.asset, ar: ctrl.asset };
@@ -304,6 +306,8 @@ function drawStats(data, plotBox) {
   const { change, up, sampled } = data;
   const vals = sampled.map(p => p.v);
   const sym = CURRENCY_MAP.get(ctrl.cur)?.symbol || ctrl.cur;
+  // شريحة شفافية: التغطية الزمنية الفعلية مقابل الفترة المطلوبة (المعادن تبني سجلها محلياً تدريجياً)
+  const spanMs = sampled[sampled.length - 1].t - sampled[0].t;
   box.append(
     el('span', { class: `stat-chip num ${up ? 'up' : 'down'}` },
       el('span', { text: t('ch.change'), 'data-i18n': 'ch.change' }), el('span', { text: ` ${up ? '▲ +' : '▼ '}${iso(change.toFixed(2))}%` })),
@@ -311,6 +315,7 @@ function drawStats(data, plotBox) {
       document.createTextNode(` ${iso(fmtSmart(Math.max(...vals)))} ${sym}`)),
     el('span', { class: 'stat-chip num' }, el('span', { text: t('ch.low') + ':' }),
       document.createTextNode(` ${iso(fmtSmart(Math.min(...vals)))} ${sym}`)),
+    el('span', { class: 'stat-chip num stat-dim' }, `⏱ ${t('ch.span')}: ${fmtSpan(spanMs)}`),
     el('span', { class: 'stat-chip num' }, `(${sampled.length} ${t('ch.points')})`),
   );
 }
@@ -326,6 +331,19 @@ function sample(pts, max) {
 function shortDate(t) {
   const d = new Date(t);
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}${d.getMonth() === 0 ? '/' + String(d.getFullYear()).slice(2) : ''}`;
+}
+/** تسمية زمنية (ساعة:دقيقة) — لما كل التغطية داخل يوم واحد بدل ما تتكرر 10/19 ×4 */
+function shortTime(t) {
+  const d = new Date(t);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+/** مدة مفهومة: دقائق/ساعات/أيام حسب الحجم */
+function fmtSpan(ms) {
+  const m = Math.max(1, Math.round(ms / 60000));
+  if (m < 90) return `${m} ${t('ch.spanM')}`;
+  const h = ms / 3600e3;
+  if (h < 48) return `${Math.round(h * 10) / 10} ${t('ch.spanH')}`;
+  return `${Math.round((h / 24) * 10) / 10} ${t('ch.spanD')}`;
 }
 function clampI(v, a, b) { return Math.min(b, Math.max(a, v)); }
 function line(x1, y1, x2, y2, stroke) {
