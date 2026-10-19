@@ -56,13 +56,14 @@ jobs:
           echo "stripped:"; ls
 
       - name: Upload site files (SFTP)
-        uses: wlixcc/SFTP-Deploy-Action@v1.5.1
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
         with:
           username: ${{ secrets.FTP_USERNAME }}
           server: ${{ secrets.FTP_SERVER }}
           port: ${{ secrets.FTP_PORT }}          # بورت SFTP المخصص
-          ssh_password: ${{ secrets.FTP_PASSWORD }}
+          ssh_private_key: ''                    # الدخول بكلمة المرور — المفتاح يُتجاهل
+          password: ${{ secrets.FTP_PASSWORD }}  # إن وُجِد password يُستخدم بدل المفتاح
           local_path: './'
           remote_path: './'                      # جذر موقعك على الاستضافة — عدّله لو نزل الملفات في مكان غلط
-          sftp_only: true                        # فرض وضع SFTP الصافي (بلا محاولات SSH تفاعلية)
-          args: '-o ConnectTimeout=30 -o StrictHostKeyChecking=no'
+          sftp_only: true                        # فرض وضع SFTP الصافي
+          sftpArgs: '-o StrictHostKeyChecking=no -o ConnectTimeout=30'
