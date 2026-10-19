@@ -4,15 +4,15 @@
 # لا رفع يدوي مطلقاً بعد اليوم.
 #
 # إعداد لمرة واحدة (دقيقتان):
-#   1) من hPanel:_emails → FTP Accounts (أو Files → FTP Accounts) خُذ:
-#        - المضيف        مثل: ftp://XX.XX.XX.XX  أو  ftp.uXXXXXXXX.hostingersite.com
+#   1) من hPanel → Files → FTP Accounts خُذ:
+#        - المضيف        مثل: ftp.u123456789.hostingersite.com أو IP
 #        - اسم المستخدم  مثل: u123456789.default
 #        - كلمة المرور
 #   2) على GitHub: Settings → Secrets and variables → Actions → New repository secret:
 #        FTP_HOST  = المضيف (بدون بادئة ftp://)
 #        FTP_USER  = اسم المستخدم
 #        FTP_PASS  = كلمة المرور
-#   3) شغّل المرة الأولى يدوياً من تبويب Actions (Run workflow) أو ادفع commit جديداً.
+#   3) أعد تشغيل الفشل من تبويب Actions (Re-run jobs) أو ادفع commit جديداً.
 #
 # ملاحظة: FTP_PORT اختياري (21 افتراضياً).
 
@@ -34,13 +34,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # فحص الأسرار مسبقاً — فشل ودّي بإرشادات بدل خطأ غامض من الـaction
+      - name: Check FTP secrets
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+        run: |
+          missing=""
+          [ -z "$FTP_HOST" ] && missing="$missing FTP_HOST"
+          [ -z "$FTP_USER" ] && missing="$missing FTP_USER"
+          [ -z "$FTP_PASS" ] && missing="$missing FTP_PASS"
+          if [ -n "$missing" ]; then
+            echo "❌ Missing repository secrets:$missing"
+            echo ""
+            echo "أضفها من: GitHub_repo → Settings → Secrets and variables → Actions → New repository secret"
+            echo "  FTP_HOST  = مضيف FTP من hPanel (Files → FTP Accounts) بدون ftp://"
+            echo "  FTP_USER  = اسم مستخدم FTP"
+            echo "  FTP_PASS  = كلمة مرور FTP"
+            echo ""
+            echo "ثم: تبويب Actions → Deploy to Hostinger → Re-run jobs"
+            exit 1
+          fi
+          echo "✅ All FTP secrets present"
+
       - name: Upload site files (FTP)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
-          # مجلد جذر الموقع على Hostinger (عدّله إن كان مختلفاً):
+          # مجلد جذر الموقع على Hostinger (عدّله إن كان نزل في مكان غلط):
           server-dir: ./
           # ملفات مستثناة من النشر (أدوات تطوير/توثيق فقط):
           exclude: |
