@@ -7,10 +7,8 @@
 #                   (مثل 145.14.151.65) أو ftp.xxx.hostingsite.com
 #   FTP_USERNAME  = اسم مستخدم FTP (مثل u123456789.default)
 #   FTP_PASSWORD  = كلمة مرور FTP
-#   FTP_PORT      = اختياري (21 افتراضياً)
-#   FTP_PROTOCOL  = اختياري — ftps | ftp | sftp (افتراضي ftps لأن Hostinger
-#                   يرفض عادةً FTP العادي غير المشفّر → Timeout (control socket))
-#   FTP_SECURITY  = اختياري — strict | loose (افتراضي loose لشهادات الـFTPS ذاتية التوقيع)
+#   FTP_PORT      = البورت من hPanel (SFTP على بورت مختلف عن 22 عندك)
+#   FTP_PROTOCOL  = اختياري — sftp | ftps | ftp (افتراضي sftp)
 
 name: Deploy to Hostinger
 
@@ -49,15 +47,14 @@ jobs:
           fi
           echo "✅ All FTP secrets present"
 
-      - name: Upload site files (FTP)
+      - name: Upload site files (SFTP)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT }}
-          protocol: ${{ secrets.FTP_PROTOCOL || 'ftps' }}      # ftps لأن Hostinger يرفض FTP العادي
-          security: ${{ secrets.FTP_SECURITY || 'loose' }}    # شهادات FTPS ذاتية التوقيع
+          port: ${{ secrets.FTP_PORT }}                       # بورت SFTP من hPanel (ليس 22)
+          protocol: ${{ secrets.FTP_PROTOCOL || 'sftp' }}     # النقل عبر SFTP كما يسمح به السيرفر
           timeout: 120000
           # مجلد جذر الموقع على Hostinger (عدّله إن كان نزل في مكان غلط):
           server-dir: ./
