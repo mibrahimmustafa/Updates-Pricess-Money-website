@@ -12,6 +12,8 @@ import { renderTimeMachine } from './timemachine.js';
 import { renderCBE } from './cbe.js';
 import { renderSettings } from './settings.js';
 import { renderMore } from './more.js';
+import { renderPrivacy } from './privacy.js';
+import { renderTerms } from './terms.js';
 
 export const renderPage = Object.freeze({
   home: renderHome,
@@ -23,4 +25,6 @@ export const renderPage = Object.freeze({
   cbe: renderCBE,
   settings: renderSettings,
   more: renderMore,
+  privacy: renderPrivacy,
+  terms: renderTerms,
 });

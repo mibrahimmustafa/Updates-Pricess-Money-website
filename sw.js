@@ -8,7 +8,7 @@
  * versioning مع تنظيف الكاش القديم.
  */
 
-const VERSION = 'pm-v1.2.0';
+const VERSION = 'pm-v1.3.0';
 const CORE = `${VERSION}-core`;
 const RUNTIME = `${VERSION}-runtime`;
 const API = `${VERSION}-api`;
@@ -30,6 +30,7 @@ const CORE_FILES = [
   './js/pages/registry.js', './js/pages/home.js', './js/pages/converter.js', './js/pages/jewelry.js',
   './js/pages/alerts.js', './js/pages/chart.js', './js/pages/timemachine.js', './js/pages/cbe.js',
   './js/pages/settings.js', './js/pages/more.js',
+  './js/pages/legal.js', './js/pages/privacy.js', './js/pages/terms.js',
 ];
 
 self.addEventListener('install', (event) => {

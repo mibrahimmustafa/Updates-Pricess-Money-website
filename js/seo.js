@@ -13,6 +13,7 @@ import { formatMoney } from './format.js';
 const ROUTES = {
   home: 'home', converter: 'converter', jewelry: 'jewelry', alerts: 'alerts',
   chart: 'chart', timemachine: 'timemachine', cbe: 'cbe', settings: 'settings', more: 'more',
+  privacy: 'privacy', terms: 'terms',
 };
 
 /** تطبيق meta المسار الحالي (يُستدعى من الراوتر بعد كل render) */

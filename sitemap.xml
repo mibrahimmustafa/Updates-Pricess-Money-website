@@ -35,4 +35,14 @@
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
+  <url>
+    <loc>https://mibrahimmustafa.github.io/Updates-Pricess-Money-website/index.html#/privacy</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://mibrahimmustafa.github.io/Updates-Pricess-Money-website/index.html#/terms</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
 </urlset>
