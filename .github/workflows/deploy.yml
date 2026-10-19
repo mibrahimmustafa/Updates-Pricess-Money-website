@@ -1,20 +1,12 @@
 # Deploy to Hostinger — تحديث تلقائي للاستضافة مع كل دخول إلى master
 # ─────────────────────────────────────────────────────────────────────────
-# ما إن تعمل `git push`، يستلم GitHub الشفرة ويرفعها FTP إلى Hostinger —
-# لا رفع يدوي مطلقاً بعد اليوم.
+# ما إن تعمل `git push`، يرفع GitHub الشفرة تلقائياً FTP إلى Hostinger.
 #
-# إعداد لمرة واحدة (دقيقتان):
-#   1) من hPanel → Files → FTP Accounts خُذ:
-#        - المضيف        مثل: ftp.u123456789.hostingersite.com أو IP
-#        - اسم المستخدم  مثل: u123456789.default
-#        - كلمة المرور
-#   2) على GitHub: Settings → Secrets and variables → Actions → New repository secret:
-#        FTP_HOST  = المضيف (بدون بادئة ftp://)
-#        FTP_USER  = اسم المستخدم
-#        FTP_PASS  = كلمة المرور
-#   3) أعد تشغيل الفشل من تبويب Actions (Re-run jobs) أو ادفع commit جديداً.
-#
-# ملاحظة: FTP_PORT اختياري (21 افتراضياً).
+# الأسرار المطلوبة (Repository secrets):
+#   FTP_SERVER    = المضيف بدون ftp://  (مثل ftp.u123456789.hostingersite.com)
+#   FTP_USERNAME  = اسم مستخدم FTP
+#   FTP_PASSWORD  = كلمة مرور FTP
+#   FTP_PORT      = اختياري (21 افتراضياً)
 
 name: Deploy to Hostinger
 
@@ -37,23 +29,18 @@ jobs:
       # فحص الأسرار مسبقاً — فشل ودّي بإرشادات بدل خطأ غامض من الـaction
       - name: Check FTP secrets
         env:
-          FTP_HOST: ${{ secrets.FTP_HOST }}
-          FTP_USER: ${{ secrets.FTP_USER }}
-          FTP_PASS: ${{ secrets.FTP_PASS }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           missing=""
-          [ -z "$FTP_HOST" ] && missing="$missing FTP_HOST"
-          [ -z "$FTP_USER" ] && missing="$missing FTP_USER"
-          [ -z "$FTP_PASS" ] && missing="$missing FTP_PASS"
+          [ -z "$FTP_SERVER" ]   && missing="$missing FTP_SERVER"
+          [ -z "$FTP_USERNAME" ] && missing="$missing FTP_USERNAME"
+          [ -z "$FTP_PASSWORD" ] && missing="$missing FTP_PASSWORD"
           if [ -n "$missing" ]; then
             echo "❌ Missing repository secrets:$missing"
             echo ""
             echo "أضفها من: GitHub_repo → Settings → Secrets and variables → Actions → New repository secret"
-            echo "  FTP_HOST  = مضيف FTP من hPanel (Files → FTP Accounts) بدون ftp://"
-            echo "  FTP_USER  = اسم مستخدم FTP"
-            echo "  FTP_PASS  = كلمة مرور FTP"
-            echo ""
-            echo "ثم: تبويب Actions → Deploy to Hostinger → Re-run jobs"
             exit 1
           fi
           echo "✅ All FTP secrets present"
@@ -61,9 +48,10 @@ jobs:
       - name: Upload site files (FTP)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASS }}
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ secrets.FTP_PORT }}
           # مجلد جذر الموقع على Hostinger (عدّله إن كان نزل في مكان غلط):
           server-dir: ./
           # ملفات مستثناة من النشر (أدوات تطوير/توثيق فقط):
