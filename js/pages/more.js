@@ -42,6 +42,18 @@ export function renderMore(container) {
   }
 
   page.append(title, list, el('h2', { class: 'sec-title', text: t('legal.linksTitle'), 'data-i18n': 'legal.linksTitle' }), legal);
+
+  // شارة الإصدار الفعلي (من مفاتيح كاش الـSW بعد التفعيل) — تكشف فوراً نسخة قديمة على الاستضافة
+  const vHint = el('p', { class: 'hint', text: '' });
+  page.append(vHint);
+  (async () => {
+    try {
+      const keys = await caches.keys();
+      const v = [...keys].map(k => /pm-v[\w.]+/.exec(k)?.[0]).find(Boolean);
+      const hasSW = !!(await navigator.serviceWorker?.getRegistrations())?.length;
+      vHint.textContent = v ? `${t('ui.version')}: ${v}${hasSW ? '' : ` · ${t('ui.noSw')}`}` : t('ui.noSw');
+    } catch { /* لوبيا — رفاهية */ }
+  })();
   container.append(page);
   return () => {};
 }

@@ -17,5 +17,21 @@ startRouter();     // يرسم الصفحة الأولى حسب الـ hash
 
 // تسجيل Service Worker (PWA — Phase 9): localhost مسموح بلا HTTPS، الإنتاج عبر HTTPS
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => { /* التطبيق يعمل بدونه */ });
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    // استدعاء تحديث دوري + عند الرجوع للتبويب: أسرع من افتراضي المتصفح
+    // — يضمن الانتقال للنسخة الجديدة بمجرد رفعها للاستضافة
+    setInterval(() => { try { reg.update(); } catch { /* رفاهية */ } }, 60 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) { try { reg.update(); } catch { /* رفاهية */ } }
+    });
+  }).catch(() => { /* التطبيق يعمل بدونه */ });
+
+  // سيرفر جديد تولى السيطرة (نسخة أحدث نُشرت) → تحميل تلقائيّة مرة واحدة.
+  // هذا يمنع "مزيج أجيال" كود قديم/جديد الناجم عن SW cache-first بعد رفع ملفات جديدة.
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded || !navigator.serviceWorker.controller) return; // أول تسجيل لا يُعد تحميلاً
+    reloaded = true;
+    location.reload();
+  });
 }
