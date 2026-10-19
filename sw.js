@@ -8,7 +8,7 @@
  * versioning مع تنظيف الكاش القديم.
  */
 
-const VERSION = 'pm-v1.1.0';
+const VERSION = 'pm-v1.2.0';
 const CORE = `${VERSION}-core`;
 const RUNTIME = `${VERSION}-runtime`;
 const API = `${VERSION}-api`;

@@ -3,8 +3,7 @@
  * مسارات: #/home … كل مسار يستدعي render(container) ويستلم دالة cleanup.
  */
 
-import { t, applyI18n } from './i18n.js';
-import { subscribe } from './store.js';
+import { applyI18n } from './i18n.js';
 import { renderPage } from './pages/registry.js';
 import { applyRouteMeta } from './seo.js';
 
@@ -35,20 +34,12 @@ function render() {
   if (cleanup) { cleanup(); cleanup = null; }        // إزالة مستمعات الصفحة السابقة
   const c = container();
   c.replaceChildren();                                // تنظيف حاسم لمنع تسريب DOM
-  cleanup = renderPage[name](c) || null;              // كل صفحة تعيد دالة تنظيف اختيارية
+  cleanup = renderPage[name](c) || null;              // كل صفحة تعيد دالة تنظيف اختياريّة
   highlight(name);
   applyRouteMeta(name);                                // meta + canonical + og لكل مسار
+  applyI18n();                                         // ترجمة عناصر data-i18n بعد كل تعميل (بدونها تبقى فاضية)
   window.scrollTo({ top: 0, behavior: 'instant' });
   attachDelegation(c);
-}
-
-function titleFor(name) {
-  const map = {
-    converter: 'nav.converter', jewelry: 'nav.jewelry', settings: 'nav.settings', more: 'nav.more',
-    alerts: 'page.alerts.title', chart: 'page.chart.title',
-    timemachine: 'page.timemachine.title', cbe: 'page.cbe.title', home: 'nav.home',
-  };
-  return `${t(map[name] || 'nav.home')} · ${t('app.name')}`;
 }
 
 /**
@@ -58,15 +49,6 @@ function titleFor(name) {
 function attachDelegation(root) { /* يُستخدم لاحقاً من صفحات المراحل التالية */ }
 
 export function start() {
-  applyI18n();
   window.addEventListener('hashchange', render);
-  subscribe(() => { if (document.hidden) return; syncNavText(); }); // تبديل لغة → نصوص التنقل
   render();
-}
-
-function syncNavText() {
-  document.querySelectorAll('#navbar [data-nav]').forEach(el => {
-    const key = el.dataset.i18n;
-    if (key) el.querySelector('.nav-label').textContent = t(key);
-  });
 }

@@ -63,7 +63,11 @@ export function renderHome(container) {
   });
   rootEl.querySelector('#bannerRetry').addEventListener('click', () => refresh());
 
-  const paint = () => paintAll(rootEl, valueEls);
+  const paint = () => {
+    // يعيد البناء الهيكلي فقط حين يتغيّر التوقيع (قوائم/لغة) ثم يلوّن الكل
+    valueEls = buildStructure(rootEl);
+    paintAll(rootEl, valueEls);
+  };
   paint();
   const unsub = subscribe(paint);
   return () => { unsub(); rootEl = null; valueEls = new Map(); };
