@@ -126,37 +126,73 @@
   <!-- حاوية Toasts -->
   <div class="toast-wrap" role="status" aria-live="polite" id="toasts"></div>
 
-  <!-- Footer قابل للزحف: محتوى SEO ثابت لمحركات البحث وأدوات الذكاء الاصطناعي -->
+  <!-- Footer قابل للزحف: محتوى SEO ثابت لمحركات البحث وأدوات الذكاء الاصطناعي.
+       نسختان (عربي/إنجليزي) موجودتان في HTML دائماً — يظهر إحداهما حسب لغة
+       الصفحة عبر html:lang() في CSS؛ فيبقى المحتوى الثابت متاحاً للزحف باللغتين. -->
   <footer class="site-footer" id="siteFooter">
-    <h2>Pricess Money — منصة أسعار المعادن النفيسة والعملات</h2>
-    <p>
-      Pricess Money منصة ويب مجانية (قابلة للتثبيت كتطبيق PWA) تعرض أسعاراً لحظية تُحدَّث كل 30 ثانية لـ:
-      <strong>الذهب</strong> (سعر الأونصة والجرام بجميع العيارات: 24، 22، 21، 18)،
-      <strong>الفضة، البلاتين، البالاديوم والنحاس</strong>،
-      وأسعار <strong>بيتكوين والإيثيريوم</strong>، بالإضافة إلى
-      <strong>أكثر من 40 عملة عالمية وعربية</strong> مقابل الدولار (جنيه مصري، ريال سعودي، درهم إماراتي، دينار كويتي، درهم مغربي، دينار جزائري، تونسي، ليبي، أردني، وعملات كبرى العالم).
-      مقارنة <strong>سعر البنك المركزي المصري الرسمي</strong> بسعر السوق الحي مع تلوين الانحراف.
-    </p>
-    <h3>الأدوات المتاحة:</h3>
-    <ul>
-      <li>الرئيسية: شريط أسعار الصرف وبطاقات المعادن بتحويل الجرم لكل عملة.</li>
-      <li>المحوّل: تحويل فوري من أي معدن أو عملة إلى كل العملات الظاهرة.</li>
-      <li>حاسبة المجوهرات: وزن + عيار + مصنعية + ضريبة القيمة المضافة 14% + خصم المبشَّت بسعر السوق.</li>
-      <li>تنبيهات الأسعار: إشعار فوري عند بلوغ سعر الجرم المستهدف فوق أو تحت.</li>
-      <li>المخططات التاريخية: تقوس تفاعلي لفترات أسبوع حتى أقصى سجل متاح.</li>
-      <li>آلة الزمن: قيمة قطعة ذهب بين 2015 واليوم مع نسبة النمو.</li>
-      <li>أسعار البنك المركزي: جدول رسمي مقابل السوق مع الفرق والفرق النسبي.</li>
-    </ul>
-    <p>
-      المصادر: <a href="https://api.gold-api.com" rel="noopener" target="_blank" dir="ltr">gold-api.com</a>
-      للمعادن، و<a href="https://frankfurter.dev" rel="noopener" target="_blank" dir="ltr">Frankfurter</a>
-      للعملات وأسعار البنك المركزي المصري. جميع البيانات إرشادية للتوضيح، ومشاهدة أسعار الشراء النهائية تكون من مصادر التداول الرسمية.
-      يدعم الموقع العربية RTL والإنجليزية بالكامل، ويعمل أوفلاين بآخر أسعار متاحة.
-    </p>
-    <nav class="footer-links" aria-label="القوانين والسياسات">
-      <a href="#/privacy">سياسة الخصوصية</a>
-      <a href="#/terms">شروط الاستخدام</a>
-    </nav>
+    <div class="footer-i18n footer-ar" lang="ar" dir="rtl">
+      <h2>Pricess Money — منصة أسعار المعادن النفيسة والعملات</h2>
+      <p>
+        Pricess Money منصة ويب مجانية (قابلة للتثبيت كتطبيق PWA) تعرض أسعاراً لحظية تُحدَّث كل 30 ثانية لـ:
+        <strong>الذهب</strong> (سعر الأونصة والجرام بجميع العيارات: 24، 22، 21، 18)،
+        <strong>الفضة، البلاتين، البالاديوم والنحاس</strong>،
+        وأسعار <strong>بيتكوين والإيثيريوم</strong>، بالإضافة إلى
+        <strong>أكثر من 40 عملة عالمية وعربية</strong> مقابل الدولار (جنيه مصري، ريال سعودي، درهم إماراتي، دينار كويتي، درهم مغربي، دينار جزائري، تونسي، ليبي، أردني، وعملات كبرى العالم).
+        مقارنة <strong>سعر البنك المركزي المصري الرسمي</strong> بسعر السوق الحي مع تلوين الانحراف.
+      </p>
+      <h3>الأدوات المتاحة:</h3>
+      <ul>
+        <li>الرئيسية: شريط أسعار الصرف وبطاقات المعادن بتحويل الجرم لكل عملة.</li>
+        <li>المحوّل: تحويل فوري من أي معدن أو عملة إلى كل العملات الظاهرة.</li>
+        <li>حاسبة المجوهرات: وزن + عيار + مصنعية + ضريبة القيمة المضافة 14% + خصم المبشَّت بسعر السوق.</li>
+        <li>تنبيهات الأسعار: إشعار فوري عند بلوغ سعر الجرم المستهدف فوق أو تحت.</li>
+        <li>المخططات التاريخية: تقوس تفاعلي لفترات أسبوع حتى أقصى سجل متاح.</li>
+        <li>آلة الزمن: قيمة قطعة ذهب بين 2015 واليوم مع نسبة النمو.</li>
+        <li>أسعار البنك المركزي: جدول رسمي مقابل السوق مع الفرق والفرق النسبي.</li>
+      </ul>
+      <p>
+        المصادر: <a href="https://api.gold-api.com" rel="noopener" target="_blank" dir="ltr">gold-api.com</a>
+        للمعادن، و<a href="https://frankfurter.dev" rel="noopener" target="_blank" dir="ltr">Frankfurter</a>
+        للعملات وأسعار البنك المركزي المصري. جميع البيانات إرشادية للتوضيح، ومشاهدة أسعار الشراء النهائية تكون من مصادر التداول الرسمية.
+        يدعم الموقع العربية RTL والإنجليزية بالكامل، ويعمل أوفلاين بآخر أسعار متاحة.
+      </p>
+      <nav class="footer-links" aria-label="القوانين والسياسات">
+        <a href="#/privacy">سياسة الخصوصية</a>
+        <a href="#/terms">شروط الاستخدام</a>
+      </nav>
+    </div>
+
+    <div class="footer-i18n footer-en" lang="en" dir="ltr">
+      <h2>Pricess Money — Precious Metals &amp; Currency Rates Platform</h2>
+      <p>
+        Pricess Money is a free web platform (installable as a PWA) showing live rates updated every 30 seconds for:
+        <strong>gold</strong> (per ounce and per gram in all karats: 24, 22, 21, 18),
+        <strong>silver, platinum, palladium and copper</strong>,
+        plus <strong>Bitcoin and Ethereum</strong>, and
+        <strong>more than 40 global and Arab currencies</strong> against the US Dollar (Egyptian pound, Saudi riyal, UAE dirham, Kuwaiti dinar, Moroccan dirham, Algerian, Tunisian, Libyan and Jordanian dinars, and major world currencies).
+        It also compares the <strong>official Central Bank of Egypt rate</strong> against the live market rate with deviation highlighting.
+      </p>
+      <h3>Available tools:</h3>
+      <ul>
+        <li>Home: exchange-rate ticker and metal cards with gram conversion for every displayed currency.</li>
+        <li>Converter: instant conversion from any metal or currency to every displayed currency.</li>
+        <li>Jewelry Calculator: weight + karat + labor fee + 14% VAT + market-rate buyback deduction.</li>
+        <li>Price Alerts: instant notification when a target gram price is crossed above or below.</li>
+        <li>Historical Charts: interactive charting over weekly ranges up to the maximum available history.</li>
+        <li>Time Machine: the value of a gold piece between 2015 and today with the growth percentage.</li>
+        <li>Central Bank Rates: official vs. market table with the difference and relative deviation.</li>
+      </ul>
+      <p>
+        Sources: <a href="https://api.gold-api.com" rel="noopener" target="_blank">gold-api.com</a>
+        for metals, and <a href="https://frankfurter.dev" rel="noopener" target="_blank">Frankfurter</a>
+        for currencies and Central Bank of Egypt rates. All data is indicative; final purchase prices must be verified from official trading sources.
+        The site fully supports RTL Arabic and English, and works offline with the last available rates.
+      </p>
+      <nav class="footer-links" aria-label="Policies and legal">
+        <a href="#/privacy">Privacy Policy</a>
+        <a href="#/terms">Terms of Use</a>
+      </nav>
+    </div>
   </footer>
 
   <noscript>

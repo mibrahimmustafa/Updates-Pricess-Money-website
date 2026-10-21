@@ -644,6 +644,12 @@
 }
 .site-footer h2 { color: var(--text-dim); font-size: 13px; margin-block: var(--sp-3) var(--sp-2); }
 .site-footer ul { margin: 0; padding-inline-start: 18px; }
+/* الفوتر SEO بمحتواه الثابت موجود بالعربية والإنجليزية معاً في HTML (قابل
+   للزحف باللغتين) — تظهر إحداهما فقط حسب لغة الصفحة (i18n يضبط <html lang>) */
+.footer-i18n[dir="rtl"] { text-align: right; }
+.footer-en { display: none; }
+html:lang(en) .footer-ar { display: none; }
+html:lang(en) .footer-en { display: block; }
 .footer-links { display: flex; gap: var(--sp-4); flex-wrap: wrap; margin-block-start: var(--sp-4); }
 .footer-links a { color: var(--gold-deep); font-weight: 700; min-height: 32px; display: inline-flex; align-items: center; }
 .footer-links a:hover { color: var(--gold); text-decoration: underline; }
