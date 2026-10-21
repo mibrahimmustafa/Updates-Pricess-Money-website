@@ -63,6 +63,14 @@
       </span>
     </a>
     <div class="topbar-actions">
+      <button type="button" class="btn btn-icon btn-ghost rippleable lang-toggle" id="langToggle"
+              aria-label="تبديل اللغة" data-i18n-attr="aria-label:a11y.langToggle" title="اللغة">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.2"/>
+          <path d="M2.8 12h18.4M12 2.8c2.6 2.4 4 5.7 4 9.2s-1.4 6.8-4 9.2c-2.6-2.4-4-5.7-4-9.2s1.4-6.8 4-9.2Z"/>
+        </svg>
+        <span class="lang-toggle-label" id="langToggleLabel" dir="ltr">EN</span>
+      </button>
       <button type="button" class="btn btn-icon btn-ghost rippleable" id="themeToggle"
               aria-label="تبديل المظهر" data-i18n-attr="aria-label:a11y.themeToggle" title="المظهر">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -203,11 +211,24 @@
 
   <script type="module" src="js/main.js"></script>
 
-  <!-- زر الثيم السريع: يربط بعد تحميل store (vanilla — بلا inline handlers) -->
+  <!-- زر الثيم وزر اللغة السريع: يرتبطان بعد تحميل store (vanilla — بلا inline handlers) -->
   <script type="module">
     import * as store from './js/store.js';
-    const btn = document.getElementById('themeToggle');
-    btn?.addEventListener('click', () => store.cycleTheme());
+    import { setLang, t } from './js/i18n.js';
+
+    document.getElementById('themeToggle')?.addEventListener('click', () => store.cycleTheme());
+
+    // زر اللغة: التسمية تعرض لغة الوجهة (لما تكون واجهتك عربية يظهر EN والعكس)
+    const langBtn = document.getElementById('langToggle');
+    const langLabel = document.getElementById('langToggleLabel');
+    const syncLangLabel = () => {
+      const cur = store.get('lang') || 'ar';
+      if (langLabel) langLabel.textContent = cur === 'ar' ? 'EN' : 'ع';
+      langBtn.title = t('a11y.langToggle');
+    };
+    langBtn?.addEventListener('click', () => setLang((store.get('lang') || 'ar') === 'ar' ? 'en' : 'ar'));
+    store.subscribe(syncLangLabel);
+    syncLangLabel();
   </script>
 </body>
 </html>

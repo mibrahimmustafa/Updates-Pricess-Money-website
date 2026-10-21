@@ -17,6 +17,7 @@ export const MESSAGES = {
     'a11y.nav': 'التنقل الرئيسي',
     'a11y.live': 'حالة تحديث الأسعار',
     'a11y.themeToggle': 'تبديل المظهر',
+    'a11y.langToggle': 'تبديل اللغة',
 
     'nav.home': 'الأسعار',
     'nav.converter': 'المحوّل',
@@ -268,6 +269,7 @@ export const MESSAGES = {
     'a11y.nav': 'Main navigation',
     'a11y.live': 'Price update status',
     'a11y.themeToggle': 'Toggle appearance',
+    'a11y.langToggle': 'Toggle language',
 
     'nav.home': 'Prices',
     'nav.converter': 'Converter',

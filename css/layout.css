@@ -45,6 +45,11 @@
 
 .topbar-actions { margin-inline-start: auto; }
 
+/* زر اللغة في الشريط: أيقونة + لغة الوجهة بنص لاتيني ثابت LTR */
+.lang-toggle { display: inline-flex; align-items: center; gap: 5px; padding-inline: 11px;
+               font-size: 12px; font-weight: 700; font-family: var(--font-latin); letter-spacing: .4px; }
+.lang-toggle-label { color: currentColor; }
+
 /* ---------- Geo balance bottom (موبايل) / sidebar (ديسكتوب) ---------- */
 #navbar { position: fixed; inset-inline: 0; inset-block-end: 0; z-index: 60; height: var(--navbar-h); }
 #navbar .nav-list {
