@@ -54,7 +54,9 @@ jobs:
                 Pricess-Money-Web-Prompts-Html-Css-JS.md \
                 TEST-REPORT.md REPAIR-PROMPT.md
           rm -rf .github
-          echo "stripped:"; ls
+          # .git ضخم (حزم pack/objects) ووسطه ملفات تقتل sftp put -r — يجب استبعاده
+          rm -rf .git
+          echo "stripped:"; ls -la
 
       - name: Upload site files (SFTP)
         uses: wlixcc/SFTP-Deploy-Action@v1.2.6
