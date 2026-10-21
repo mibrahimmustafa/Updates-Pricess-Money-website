@@ -72,7 +72,7 @@ export function renderConverter(container) {
     const c = CURRENCY_MAP.get(code);
     const row = el('button', { type: 'button', class: 'r-row' },
       el('span', { class: 'r-cur num', text: `${flagEmoji(code)} ${code}` }),
-      el('span', { class: 'r-name text-dim', text: c.ar }),
+      el('span', { class: 'r-name text-dim', text: get('lang') === 'ar' ? c.ar : c.en }),
       el('span', { class: 'r-val num', text: '—' }),
     );
     rows.append(row);
@@ -106,7 +106,7 @@ function fillFrom(sel) {
   }
   const g2 = el('optgroup', { label: t('conv.currencies') });
   for (const c of CURRENCIES) {
-    g2.append(el('option', { value: c.code, text: `${flagEmoji(c.code)} ${c.code} — ${c.ar}` }));
+    g2.append(el('option', { value: c.code, text: `${flagEmoji(c.code)} ${c.code} — ${get('lang') === 'ar' ? c.ar : c.en}` }));
   }
   sel.append(g1, g2);
 }

@@ -56,7 +56,7 @@ export function renderHome(container) {
     <p class="last-update" id="lastUpdate" aria-live="polite"></p>
   `;
   container.append(rootEl);
-  valueEls = buildStructure(rootEl);
+  valueEls = buildStructure(rootEl, true); // قوة: إعادة البناء لأول رندر دائماً
 
   rootEl.querySelector('#refreshBtn').addEventListener('click', () => {
     refresh(); toast(t('ui.loading'), { kind: 'gold', ms: 1800 });
@@ -91,9 +91,12 @@ function skeletonHTML() {
     </div>`;
 }
 
-function buildStructure(root) {
+/* force: renderHome يستدعيها دائماً بقوة — كان builtSig باقياً من الرندر السابق
+ * (دورة: الرئيسية → صفحة أخرى → رجوع) فبقى التوقيع متطابقاً والبناء يتخطَّى
+ * → شريط/bطاقات فارغة تماماً عند الرجوع (باج صورة المستخدم #1) */
+function buildStructure(root, force = false) {
   const sig = sigOf();
-  if (sig === builtSig) return valueEls;
+  if (sig === builtSig && !force) return valueEls;
   builtSig = sig;
 
   const strip = root.querySelector('#fxStrip');
@@ -237,17 +240,20 @@ function computeKarat(purity) {
 
 /* ============ التحديث الموضعي (كل دورة أو تغيير حالة) ============ */
 let rafPending = false;
+function paintNow(root, els) {
+  if (!rootEl) return;
+  updateLatency(root);
+  updateNetwork(root);
+  updateLastUpdate(root);
+  updateValues(els);
+}
 function paintAll(root, els) {
   if (rafPending) return;
   rafPending = true;
-  requestAnimationFrame(() => {
-    rafPending = false;
-    if (!rootEl) return;
-    updateLatency(root);
-    updateNetwork(root);
-    updateLastUpdate(root);
-    updateValues(els);
-  });
+  requestAnimationFrame(() => { rafPending = false; paintNow(root, els); });
+  // بديل أمان: في تاب مخفي rAF لا يُنفّذ أبداً — كان القفل يعلق rafPending=true
+  // فيتوقف كل التحديث الموضعي (بنر أوفلاين/وقت التحديث) إلى حين الظهور
+  setTimeout(() => { if (rafPending) { rafPending = false; paintNow(root, els); } }, 300);
 }
 
 function updateLatency(root) {

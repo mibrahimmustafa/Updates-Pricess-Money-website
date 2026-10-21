@@ -35,8 +35,16 @@ export function get(key) {
   return key.split('.').reduce((o, k) => (o == null ? undefined : o[k]), state);
 }
 
-/** كتابة جزئية + نشر الحدث + حفظ التفضيلات */
+/** كتابة جزئية + نشر الحدث + حفظ التفضيلات.
+ * تحصين: currencies/metals لا يصجان غير مصفوفتين من أي كاتب —
+ * القيمة غير المصفوفة (null وغيرها) تعود للافتراضي بدل أن تنكسر الصفحات لاحقاً */
 export function set(partial) {
+  if (partial.currencies !== undefined && !Array.isArray(partial.currencies)) {
+    partial = { ...partial, currencies: [...DEFAULT_CURRENCIES] };
+  }
+  if (partial.metals !== undefined && !Array.isArray(partial.metals)) {
+    partial = { ...partial, metals: [...DEFAULT_ASSETS] };
+  }
   const changed = Object.keys(partial).filter(k =>
     JSON.stringify(partial[k]) !== JSON.stringify(state[k])
   );

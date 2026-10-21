@@ -114,7 +114,7 @@ function fillDisplayCurrencyOptions(sel) {
   sel.replaceChildren();
   for (const code of get('currencies')) {
     const c = CURRENCY_MAP.get(code);
-    const o = el('option', { value: code, text: `${flagEmoji(code)} ${code} — ${c.ar} (${c.symbol})` });
+    const o = el('option', { value: code, text: `${flagEmoji(code)} ${code} — ${get('lang') === 'ar' ? c.ar : c.en} (${c.symbol})` });
     sel.append(o);
   }
   sel.value = get('displayCurrency');

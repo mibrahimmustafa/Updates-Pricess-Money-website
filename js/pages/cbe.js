@@ -99,7 +99,7 @@ function row(code, c, official, market) {
   const row = el('div', { class: 't-row cbe-row', role: 'row' });
   const curCell = el('span', { class: 't-cell t-cur' },
     el('span', { class: 'num', text: `${flagEmoji(code)} ${code}` }),
-    el('span', { class: 't-name text-dim', text: c?.ar || '' }));
+    el('span', { class: 't-name text-dim', text: c ? (get('lang') === 'ar' ? c.ar : c.en) : '' }));
   const off = Number.isFinite(official) ? iso(fmtSmart(official)) : '—';
   const mk = Number.isFinite(market) ? iso(fmtSmart(market)) : '—';
 

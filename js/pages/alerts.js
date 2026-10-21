@@ -29,7 +29,7 @@ export function renderAlerts(container) {
   const curSel = el('select', { class: 'select rippleable', 'aria-label': t('al.currency') });
   for (const code of get('currencies')) {
     const c = CURRENCY_MAP.get(code);
-    curSel.append(el('option', { value: code, text: `${flagEmoji(code)} ${code} — ${c.ar}` }));
+    curSel.append(el('option', { value: code, text: `${flagEmoji(code)} ${code} — ${get('lang') === 'ar' ? c.ar : c.en}` }));
   }
   const target = el('input', {
     class: 'input num', type: 'number', inputmode: 'decimal', min: '0', step: 'any',
@@ -190,7 +190,7 @@ function fillSel(sel, codes, ariaKey) {
   sel.replaceChildren();
   for (const code of codes) {
     const c = CURRENCY_MAP.get(code) || ASSET_MAP.get(code);
-    sel.append(el('option', { value: code, text: c?.ar || c?.en || code }));
+    sel.append(el('option', { value: code, text: c ? (get('lang') === 'ar' ? c.ar : c.en) : (c?.ar || c?.en || code) }));
   }
 }
 function field(labelText, control) {

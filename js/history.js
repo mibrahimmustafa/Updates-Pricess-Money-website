@@ -27,8 +27,7 @@ export function record(prices, usdRates) {
   const lastT = h._lastT || 0;
   if (Date.now() - lastT < MIN_GAP) return;
   h._lastT = Date.now();
-  const point = { t: Date.now(), p: {}, r: usdRates };
-  for (const code of Object.keys(prices)) {
+  const point = { t: Date.now(), p: {}, r: usdRates };  for (const code of Object.keys(prices)) {
     if (!ASSET_MAP.has(code)) continue;
     const g = pricePerGramUSD(code, prices[code].usd);
     if (Number.isFinite(g)) point.p[code] = Number(g.toFixed(6));
@@ -42,7 +41,8 @@ export function record(prices, usdRates) {
     h[code].push(point);
     if (h[code].length > MAX_POINTS) h[code] = h[code].slice(-MAX_POINTS);
   }
-  delete h._lastT;
+  // ينباها: _lastT يبقى محفوظاً — كان يُحذَف فاصلة عدم تجاوز الفجوة 5 دقائق (باج القياس!)
+  // مع بقاء الطوابع في keys التخزين، تعمل مقارنة الفجوة محلياً بين التشغيلات
   save(h);
 }
 

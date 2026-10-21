@@ -51,7 +51,8 @@ jobs:
       - name: Strip dev-only files
         run: |
           rm -f devserver.py README.md architecture.json arctecture.json \
-                Pricess-Money-Web-Prompts-Html-Css-JS.md
+                Pricess-Money-Web-Prompts-Html-Css-JS.md \
+                TEST-REPORT.md REPAIR-PROMPT.md
           rm -rf .github
           echo "stripped:"; ls
 
