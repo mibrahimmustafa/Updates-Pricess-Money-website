@@ -162,7 +162,8 @@ function switchInput(checked, onchange) {
   sync();
   return lab;
 }
-function karatChips(current, onPick, small = false) {
+function karatChips(initial, onPick, small = false) {
+  let current = initial; // قابلة للتحديث — كانت تُقرأ من الإغلاق فبقيت على قيمة البناء الأصلية
   const wrap = el('div', { class: `chips karat-chips${small ? ' small' : ''}`, role: 'group' });
   const sync = () => wrap.querySelectorAll('.chip').forEach(c => {
     const active = c.dataset.k === current;
@@ -173,7 +174,7 @@ function karatChips(current, onPick, small = false) {
     const c = el('button', {
       type: 'button', class: `chip rippleable${k === current ? ' active' : ''}`,
       'aria-pressed': String(k === current), dataset: { k },
-      onclick: (e) => { onPick(k); sync(); },
+      onclick: (e) => { current = k; onPick(k); sync(); },
     }, el('span', { class: 'num', text: k }));
     wrap.append(c);
   }
