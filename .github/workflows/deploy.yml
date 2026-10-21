@@ -1,12 +1,8 @@
 # Deploy to Hostinger — تحديث تلقائي للاستضافة مع كل دخول إلى master
-# ─────────────────────────────────────────────────────────────────────────
-# النقل عبر SFTP (مضمون موجود عند Hostinger) على بورت مخصص.
-#
-# الأسرار المطلوبة (Repository secrets):
-#   FTP_SERVER    = المضيف بدون ftp://
-#   FTP_USERNAME  = اسم مستخدم SFTP
-#   FTP_PASSWORD  = كلمة مرور SFTP
-#   FTP_PORT      = بورت SFTP من hPanel (مختلف عن 22 في الاستضافة الحالية)
+# ─────────────────────────────────────────────────────────────────────
+# النقل عبر SFTP بخطوة bash مباشرة (sshpass + sftp) مع إعادة محاولات
+# تلقائية — لأن اتصال SFTP من GitHub Actions على بعض أنتيًا الـIP يتقطع
+# (أثبت اليراقب: جولة #16 اتصلت وبدأت put، وجولة #17 خالف port timeout).
 
 name: Deploy to Hostinger
 
@@ -22,6 +18,7 @@ concurrency:
 jobs:
   sftp-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,8 +38,7 @@ jobs:
           [ -z "$FTP_PORT" ]     && missing="$missing FTP_PORT"
           if [ -n "$missing" ]; then
             echo "❌ Missing repository secrets:$missing"
-            echo ""
-            echo "أضفها من: GitHub_repo → Settings → Secrets and variables → Actions"
+            echo "أضِفها من: GitHub_repo → Settings → Secrets and variables → Actions"
             exit 1
           fi
           echo "✅ All secrets present"
@@ -54,19 +50,41 @@ jobs:
                 Pricess-Money-Web-Prompts-Html-Css-JS.md \
                 TEST-REPORT.md REPAIR-PROMPT.md
           rm -rf .github
-          # .git ضخم (حزم pack/objects) ووسطه ملفات تقتل sftp put -r — يجب استبعاده
+          # .git ضخم (حزم pack/objects) ووسطه ملفات تقتل sftp put -r
           rm -rf .git
           echo "stripped:"; ls -la
 
-      - name: Upload site files (SFTP)
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
-        with:
-          username: ${{ secrets.FTP_USERNAME }}
-          server: ${{ secrets.FTP_SERVER }}
-          port: ${{ secrets.FTP_PORT }}          # بورت SFTP المخصص
-          ssh_private_key: ''                    # الدخول بكلمة المرور — المفتاح يُتجاهل
-          password: ${{ secrets.FTP_PASSWORD }}  # إن وُجِد password يُستخدم بدل المفتاح
-          local_path: './'
-          remote_path: './'                      # جذر موقعك على الاستضافة — عدّله لو نزل الملفات في مكان غلط
-          sftp_only: true                        # فرض وضع SFTP الصافي
-          sftpArgs: '-o StrictHostKeyChecking=no -o ConnectTimeout=30'
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
+      # رفع عبر sftp مباشرة — 5 محاولات (كل محاولة runner ندي IP خاصية)
+      - name: Upload site files (SFTP, retried)
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ secrets.FTP_PORT }}
+        run: |
+          set -o pipefail
+          printf 'put -r ./* .\nls -1\n' > /tmp/sftp_batch
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            echo "── Attempt $attempt/5 ──"
+            if sshpass -p "$FTP_PASSWORD" sftp \
+                 -oBatchMode=no \
+                 -oStrictHostKeyChecking=no \
+                 -oUserKnownHostsFile=/dev/null \
+                 -oConnectTimeout=45 \
+                 -P "$FTP_PORT" \
+                 "$FTP_USERNAME@$FTP_SERVER" < /tmp/sftp_batch; then
+              ok=1
+              echo "✅ Upload succeeded (attempt $attempt)"
+              break
+            fi
+            echo "… attempt $attempt failed — sleeping 20s before retry"
+            sleep 20
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "❌ All 5 sftp attempts failed — check server uptime/firewall for the SFTP port"
+            exit 1
+          fi
